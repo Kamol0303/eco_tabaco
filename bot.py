@@ -459,7 +459,7 @@ async def cmd_start(m: Message, state: FSMContext):
     if row["phone"]:
         await m.answer(
             f"Qaytganingiz bilan, <b>{esc(row['name'])}</b>! 👋",
-            reply_markup=main_menu(False),
+            reply_markup=main_menu(False, uid=u.id, name=row["name"]),
         )
         return
     await m.answer(
@@ -882,7 +882,11 @@ async def cb_checkout(cb: CallbackQuery, state: FSMContext):
 @user.message(Order.location, F.text == BTN_CANCEL)
 async def order_cancel_text(m: Message, state: FSMContext):
     await state.clear()
-    await m.answer("Buyurtma bekor qilindi. Savatchangiz saqlanib qoldi.", reply_markup=main_menu(is_admin(m.from_user.id)))
+    u = m.from_user
+    await m.answer(
+        "Buyurtma bekor qilindi. Savatchangiz saqlanib qoldi.",
+        reply_markup=main_menu(is_admin(u.id), uid=u.id, name=u.full_name),
+    )
 
 
 @user.message(Order.location, F.location)
@@ -891,7 +895,7 @@ async def order_got_location(m: Message, state: FSMContext):
     items = db.cart_items(uid)
     if not items:
         await state.clear()
-        await m.answer("Savatchangiz bo'sh.", reply_markup=main_menu(is_admin(uid)))
+        await m.answer("Savatchangiz bo'sh.", reply_markup=main_menu(is_admin(uid), uid=uid, name=m.from_user.full_name))
         return
     total = sum(i["price"] * i["qty"] for i in items)
     lat, lon = m.location.latitude, m.location.longitude
@@ -910,7 +914,7 @@ async def order_got_location(m: Message, state: FSMContext):
         f"📍 Joylashuv: <code>{lat:.6f}, {lon:.6f}</code>",
         "\nHammasi to'g'rimi?",
     ]
-    await m.answer("📍 Joylashuv qabul qilindi.", reply_markup=main_menu(is_admin(uid)))
+    await m.answer("📍 Joylashuv qabul qilindi.", reply_markup=main_menu(is_admin(uid), uid=uid, name=m.from_user.full_name))
     await m.answer(
         "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(

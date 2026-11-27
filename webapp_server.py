@@ -98,36 +98,57 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
 
 
 def create_launch_token(uid: int, name: str, bot_token: str, ttl_sec: int = 30 * 86400) -> str:
-    """Bot klaviaturasi (ReplyKeyboard web_app) tugmalari uchun imzolangan kirish tokeni yaratadi."""
-    payload_obj = {"uid": int(uid), "name": str(name or f"User {uid}")[:80], "exp": int(time.time()) + ttl_sec}
-    raw = json.dumps(payload_obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    b64 = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    """Bot klaviaturasi (ReplyKeyboard web_app) tugmalari uchun ixcham imzolangan kirish tokeni yaratadi."""
+    exp = int(time.time()) + ttl_sec
+    msg = f"{int(uid)}.{exp}"
     secret = hmac.new(b"EcoLaunchToken", bot_token.encode("utf-8"), hashlib.sha256).digest()
-    sig = hmac.new(secret, b64.encode("ascii"), hashlib.sha256).hexdigest()
-    return f"{b64}.{sig}"
+    sig = hmac.new(secret, msg.encode("ascii"), hashlib.sha256).hexdigest()[:24]
+    return f"{msg}.{sig}"
 
 
 def verify_launch_token(token: str, bot_token: str) -> dict | None:
-    """Imzolangan Mini App kirish tokenini tekshiradi."""
-    if not token or "." not in token:
+    """Imzolangan Mini App kirish tokenini tekshiradi (ixcham va eski formatlarni qo'llaydi)."""
+    if not token:
         return None
-    b64, sig = token.split(".", 1)
-    if not b64 or not sig:
-        return None
+    parts = token.split(".")
     secret = hmac.new(b"EcoLaunchToken", bot_token.encode("utf-8"), hashlib.sha256).digest()
-    expected = hmac.new(secret, b64.encode("ascii"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, sig):
-        return None
-    try:
-        padded = b64 + "=" * (-len(b64) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
-        uid = int(payload["uid"])
-        exp = int(payload["exp"])
-    except (ValueError, KeyError, TypeError):
-        return None
-    if exp <= time.time():
-        return None
-    return {"id": uid, "name": str(payload.get("name") or f"User {uid}")}
+
+    if len(parts) == 3:
+        uid_s, exp_s, sig = parts
+        if not uid_s or not exp_s or len(sig) < 16:
+            return None
+        msg = f"{uid_s}.{exp_s}"
+        expected = hmac.new(secret, msg.encode("ascii"), hashlib.sha256).hexdigest()[: len(sig)]
+        if not hmac.compare_digest(expected, sig):
+            return None
+        try:
+            uid = int(uid_s)
+            exp = int(exp_s)
+        except ValueError:
+            return None
+        if exp <= time.time():
+            return None
+        return {"id": uid, "name": ""}
+
+    if len(parts) == 2:
+        b64, sig = parts
+        if not b64 or not sig:
+            return None
+        expected = hmac.new(secret, b64.encode("ascii"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return None
+        try:
+            padded = b64 + "=" * (-len(b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+            uid = int(payload["uid"])
+            exp = int(payload["exp"])
+        except (ValueError, KeyError, TypeError):
+            return None
+        if exp <= time.time():
+            return None
+        return {"id": uid, "name": str(payload.get("name") or f"User {uid}")}
+
+    return None
 
 
 def normalize_phone(raw: str) -> str | None:
@@ -173,10 +194,12 @@ class WebAppHandler:
                     text=json.dumps({"ok": False, "error": "Mini App havolasi eskirgan, botda /start bosing.", "code": "invalid_launch_token"}),
                     content_type="application/json",
                 )
-            self.db.touch_user(tg_user["id"], tg_user["name"])
+            existing = self.db.get_user(tg_user["id"])
+            resolved_name = tg_user["name"] or (existing["name"] if existing else f"User {tg_user['id']}")
+            self.db.touch_user(tg_user["id"], resolved_name)
             return {
                 "id": tg_user["id"],
-                "name": tg_user["name"],
+                "name": resolved_name,
                 "is_admin": tg_user["id"] in ADMIN_IDS,
                 "source": "telegram_keyboard",
             }

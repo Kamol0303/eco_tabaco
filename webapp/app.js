@@ -43,6 +43,7 @@
     adminFilter: "all",
     adminSearch: "",
     adminData: null,
+    adminMaps: [],
     map: null,
     marker: null,
     lat: DEFAULT_COORDS.lat,
@@ -663,6 +664,46 @@
     }
   }
 
+  function mountAdminOrderMaps(orders) {
+    if (typeof window.L === "undefined") return;
+    const pinIcon = L.divIcon({
+      className: "eco-pin-wrap",
+      html: `<div style="width:18px;height:18px;border-radius:50%;background:#e6b82e;border:2.5px solid #0b0e0c;box-shadow:0 0 0 4px rgba(230,184,46,0.35);"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+    orders.forEach((o) => {
+      const lat = Number(o.lat);
+      const lon = Number(o.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      const el = document.getElementById(`adminOrderMap-${o.id}`);
+      if (!el) return;
+      try {
+        const m = L.map(el, {
+          center: [lat, lon],
+          zoom: 15,
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          touchZoom: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          tap: false,
+        });
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(m);
+        L.marker([lat, lon], { icon: pinIcon, interactive: false }).addTo(m);
+        state.adminMaps.push(m);
+        setTimeout(() => {
+          try {
+            m.invalidateSize();
+          } catch (_) {}
+        }, 120);
+      } catch (_) {}
+    });
+  }
+
   function renderAdmin() {
     const d = state.adminData;
     if (!d) return;
@@ -702,6 +743,15 @@
     document.getElementById("adminStatusChips").innerHTML = chips.join("");
 
     const ordersList = document.getElementById("adminOrdersList");
+    if (Array.isArray(state.adminMaps) && state.adminMaps.length) {
+      state.adminMaps.forEach((m) => {
+        try {
+          m.remove();
+        } catch (_) {}
+      });
+      state.adminMaps = [];
+    }
+
     if (!d.orders.length) {
       ordersList.innerHTML = `<div class="empty-card"><p>Buyurtmalar topilmadi.</p></div>`;
     } else {
@@ -731,6 +781,32 @@
               </div>`
             : "";
 
+          const latNum = Number(o.lat);
+          const lonNum = Number(o.lon);
+          const hasCoords = Number.isFinite(latNum) && Number.isFinite(lonNum);
+          const gmapsRouteUrl = hasCoords
+            ? `https://www.google.com/maps/dir/?api=1&destination=${latNum},${lonNum}&travelmode=driving`
+            : "";
+          const yandexRouteUrl = hasCoords
+            ? `https://yandex.uz/maps/?rtext=~${latNum},${lonNum}&rtt=auto`
+            : "";
+
+          const mapSectionHtml = hasCoords
+            ? `
+              <div class="order-map-wrap">
+                <div class="order-map-box" id="adminOrderMap-${o.id}" data-lat="${latNum}" data-lon="${lonNum}"></div>
+                <div class="order-route-actions">
+                  <a class="route-btn" href="${gmapsRouteUrl}" data-ext-url="${gmapsRouteUrl}" target="_blank" rel="noopener">
+                    📍 Google Maps (Marshrut)
+                  </a>
+                  <a class="route-btn yandex" href="${yandexRouteUrl}" data-ext-url="${yandexRouteUrl}" target="_blank" rel="noopener">
+                    🧭 Yandex Xarita
+                  </a>
+                </div>
+              </div>
+            `
+            : "";
+
           return `
             <article class="order-card">
               <div class="order-card-head">
@@ -743,10 +819,15 @@
                 <span class="status-pill ${esc(o.status)}">${esc(o.status_emoji)} ${esc(o.status_label)}</span>
               </div>
               <div class="order-items-mini">${itemsHtml}</div>
+              ${mapSectionHtml}
               <div class="order-card-foot">
-                <a class="map-link" href="https://www.google.com/maps?q=${o.lat},${o.lon}" target="_blank" rel="noopener">
-                  🗺 ${o.lat.toFixed(4)}, ${o.lon.toFixed(4)}
-                </a>
+                ${
+                  hasCoords
+                    ? `<a class="map-link" href="https://www.google.com/maps?q=${latNum},${lonNum}" data-ext-url="https://www.google.com/maps?q=${latNum},${lonNum}" target="_blank" rel="noopener">
+                        🗺 ${latNum.toFixed(4)}, ${lonNum.toFixed(4)}
+                      </a>`
+                    : `<span class="muted-label small">📍 Joylashuv ko'rsatilmagan</span>`
+                }
                 <strong class="gold-text">${money(o.total)} so'm</strong>
               </div>
               ${actionsHtml}
@@ -754,6 +835,8 @@
           `;
         })
         .join("");
+
+      mountAdminOrderMaps(d.orders);
     }
 
     document.getElementById("adminProductsList").innerHTML = d.products
@@ -996,6 +1079,13 @@
     });
 
     // Admin actions
+    document.getElementById("adminOrdersList").addEventListener("click", (e) => {
+      const extLink = e.target.closest("a[data-ext-url]");
+      if (extLink && tg && typeof tg.openLink === "function") {
+        e.preventDefault();
+        tg.openLink(extLink.dataset.extUrl);
+      }
+    });
     document.getElementById("btnRefreshAdmin").addEventListener("click", loadAdminOverview);
     document.getElementById("adminSubTabs").addEventListener("click", (e) => {
       const btn = e.target.closest(".seg-btn");
