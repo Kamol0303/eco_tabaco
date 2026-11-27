@@ -1,78 +1,49 @@
-# ECO PLATFORM — Factory Management & Regional Distribution Ecosystem
+# ECO buyurtma boti
 
-ECO — Markaziy tamaki ishlab chiqarish zavodi, 14 ta hududiy dilerlar va iste'molchilarni bog'lovchi yagona professional ERP/CRM platformasi.
+Oddiy Telegram buyurtma boti: ro'yxatdan o'tish (telefon), mahsulotlar (Mint, Classic, Premium — 225 000 so'm),
+savatcha, joylashuv yuborish, adminga bildirishnoma va buyurtma holatlarini boshqarish.
 
----
+## Ishga tushirish (kompyuter yoki VPS)
 
-## 🏛 1. Tizim Arxitekturasi
+1. Python 3.10+ o'rnatilgan bo'lishi kerak.
+2. Papkada terminal oching:
 
-Tizim uch darajali boshqaruv tamoyiliga asoslangan:
+       python -m venv venv
+       source venv/bin/activate        # Windows: venv\Scripts\activate
+       pip install -r requirements.txt
+       python bot.py
 
-```
-FACTORY / SUPERADMIN  --->  REGIONAL DEALERS  --->  CUSTOMERS
-(Zavod Boshqaruvi)         (Hududiy Adminlar)      (Telegram Mini App)
-```
+3. `.env` faylida token va admin ID turibdi (`BOT_TOKEN`, `ADMIN_IDS`). Bir nechta admin: vergul bilan `111,222`.
+4. **Admin botga bir marta /start bosishi shart** — aks holda bot unga bildirishnoma yubora olmaydi.
 
-1. **SUPERADMIN (Zavod):**
-   - Yagona asosiy boshqaruvchi (ID: `7082420359`).
-   - Mahsulotlar (chakana, ulgurji narx, tannarx).
-   - Markaziy zavod ombori va qoldiqlar harakati.
-   - 14 ta viloyat bo'yicha tovar taqsimoti (Jo'natmalar / Shipments).
-   - Hududiy dilerlarni tayinlash, almashtirish va ularning zavod oldidagi qarzdorligini yuritish.
-   - Ulgurji savdo (`wholesale`) va Realizatsiya (`consignment`) hisob modellari.
-   - Barcha viloyatlar bo'yicha moliyaviy analitika, yalpi foyda (`gross_profit`), audit va CSV/Excel eksport.
+## VPS'da doimiy ishlashi (systemd)
 
-2. **REGIONAL DEALERS (Hududiy Dilerlar):**
-   - Har bir viloyatga biriktirilgan faol diler Telegram hisobi.
-   - Faqat o'z viloyati bo'yicha mustaqil virtual ombor (`stock`, `reserved`, `sold`).
-   - O'z hududiga kelgan jo'natmalarni qabul qilish (kamomad va tafovutlarni qayd etish).
-   - Faqat o'z viloyatidagi mijozlar va buyurtmalar bilan ishlash.
-   - Boshqa viloyat ma'lumotlariga kirish server darajasida (`403 Forbidden`) bloklangan.
+`/etc/systemd/system/ecobot.service`:
 
-3. **CUSTOMERS (Mijozlar):**
-   - Telegram Mini App (Luxury Dark & Gold dizayn, xarita, GPS, `− 0 +` steppers).
-   - Ro'yxatdan o'tishda viloyat va tumanini tanlaydi.
-   - Buyurtma avtomatik ravishda faqat tegishli viloyat dileriga yo'naltiriladi (boshqa dilerlarga bildirishnoma bormaydi).
+    [Unit]
+    Description=ECO Telegram bot
+    After=network.target
 
----
+    [Service]
+    WorkingDirectory=/opt/eco_bot
+    ExecStart=/opt/eco_bot/venv/bin/python bot.py
+    Restart=always
+    User=ecobot
 
-## 🚀 2. Ishga tushirish
+    [Install]
+    WantedBy=multi-user.target
 
-1. Virtual muhitni faollashtirish va bog'liqliklarni o'rnatish:
-   ```powershell
-   .\venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-2. `.env` faylida sozlamalar:
-   ```env
-   BOT_TOKEN=9297936319:AAE91YbtccXDUfoLqOfLlZbATUQkpTZz7Zg
-   SUPERADMIN_IDS=7082420359
-   ADMIN_IDS=7082420359,8907509594
-   WEBAPP_URL=https://nick-affect-usc-thought.trycloudflare.com
-   ```
-3. Bot va API serverni ishga tushirish:
-   ```powershell
-   python bot.py
-   ```
+    sudo systemctl daemon-reload && sudo systemctl enable --now ecobot
+    sudo journalctl -u ecobot -f        # loglarni ko'rish
 
----
+## Admin buyruqlari
 
-## 📊 3. Ma'lumotlar Bazasi Modeli (SQLite)
+- `/admin` — admin panel (yangi buyurtmalar, filtr, statistika, foydalanuvchilar, mahsulotlar)
+- `/narx mint 230000` — narxni o'zgartirish (kalitlar: `mint`, `classic`, `premium`)
+- `/qidirish Ali` — ism, telefon yoki buyurtma raqami bo'yicha qidirish
 
-- `users` — Mijozlar, viloyat (`region_id`), tuman (`district`) va yosh tasdig'i (`age_ok`).
-- `regions` — O'zbekistonning 14 ta ma'muriy hududi va ularning tumanlari (JSON).
-- `dealers` — Har bir hududga biriktirilgan dilerlar, ularning Telegram ID si, narxlash modeli va faollik holati.
-- `factory_inventory` — Zavodning markaziy tovar qoldig'i.
-- `dealer_inventory` — Dilerlarning virtual ombori (`stock`, `reserved`, `sold`).
-- `inventory_transactions` — Ombor harakatlarining o'zgarmas tarixi (Audit ledger).
-- `shipments` & `shipment_items` — Zavoddan dilerlarga tovar jo'natish, tracking raqami, tafovutlar (`discrepancy_qty`).
-- `dealer_finances` — Dilerlarning zavod oldidagi qarzdorligi va to'lovlari jurnali.
-- `audit_log` — Tizimdagi har bir muhim operatsiya (narx o'zgarishi, to'lov, ombor tuzatish) auditi.
+## Ma'lumotlar
 
----
-
-## 🔒 4. Xavfsizlik
-
-- **HMAC-SHA256 InitData:** Telegram WebApp orqali kelgan har bir so'rov bot tokeni bilan imzosi tekshirilib, foydalanuvchining roli serverda aniqlanadi.
-- **Role-Based Access Control (RBAC):** SuperAdmin, Diler va Xaridor huquqlari server tomonda qat'iy ajratilgan.
-- **Audit Logging:** Moliyaviy va ombor operatsiyalarini izsiz o'chirish taqiqlangan, har qanday tuzatish qarshi operatsiya bilan qayd etiladi.
+- Baza: `data/bot.db` (SQLite) — bot qayta ishga tushsa ham saqlanadi
+- Zaxira: har 24 soatda `backups/` papkasiga (oxirgi 7 ta)
+- Log: `data/bot.log`

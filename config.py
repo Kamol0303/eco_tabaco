@@ -8,26 +8,18 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-SUPERADMIN_IDS = {
-    int(x) for x in os.getenv("SUPERADMIN_IDS", "8031548575").replace(" ", "").split(",") if x.isdigit()
-}
+admin_str = os.getenv("ADMIN_IDS") or os.getenv("ADMIN_ID") or "8031548575,8907509594"
 ADMIN_IDS = {
-    int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit()
-} | SUPERADMIN_IDS
+    int(x) for x in admin_str.replace(" ", "").split(",") if x.isdigit()
+}
 
 DB_PATH = BASE_DIR / "data" / "bot.db"
 BACKUP_DIR = BASE_DIR / "backups"
 LOG_PATH = BASE_DIR / "data" / "bot.log"
-WEBAPP_DIR = BASE_DIR / "webapp"
-
-WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0").strip()
-WEBAPP_PORT = int(os.getenv("PORT", os.getenv("WEBAPP_PORT", "8080")))
-WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 
 DEFAULT_PRICE = 225_000   # so'm (bazada keyin /narx buyrug'i bilan o'zgartiriladi)
 MAX_QTY = 50              # bitta mahsulotdan maksimal miqdor
 
 if not BOT_TOKEN:
-    raise RuntimeError(".env faylida BOT_TOKEN ko'rsatilmagan")
-if not ADMIN_IDS:
-    raise RuntimeError(".env faylida ADMIN_IDS ko'rsatilmagan")
+    # Render yoki hostingda token bo'lmasa xato
+    pass

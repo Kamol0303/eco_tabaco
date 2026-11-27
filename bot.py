@@ -4,7 +4,6 @@ import html
 import logging
 from datetime import datetime
 
-from aiohttp import web
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -22,30 +21,13 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
-    MenuButtonDefault,
-    MenuButtonWebApp,
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
-    WebAppInfo,
 )
 
-from config import (
-    ADMIN_IDS,
-    BACKUP_DIR,
-    BASE_DIR,
-    BOT_TOKEN,
-    DB_PATH,
-    DEFAULT_PRICE,
-    LOG_PATH,
-    MAX_QTY,
-    SUPERADMIN_IDS,
-    WEBAPP_HOST,
-    WEBAPP_PORT,
-    WEBAPP_URL,
-)
+from config import ADMIN_IDS, BACKUP_DIR, BASE_DIR, BOT_TOKEN, DB_PATH, DEFAULT_PRICE, LOG_PATH, MAX_QTY
 from db import Database, now_str
-from webapp_server import create_webapp
 
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -151,16 +133,7 @@ def status_label(code: str) -> str:
 
 
 def is_admin(uid: int) -> bool:
-    return uid in ADMIN_IDS or uid in SUPERADMIN_IDS
-
-
-def is_dealer(uid: int) -> bool:
-    d = db.get_dealer_by_tg_id(uid)
-    return d is not None and bool(d["is_active"])
-
-
-def is_admin_or_dealer(uid: int) -> bool:
-    return is_admin(uid) or is_dealer(uid)
+    return uid in ADMIN_IDS
 
 
 def btn(text: str, data: str) -> InlineKeyboardButton:
@@ -188,76 +161,12 @@ async def safe_edit_markup(msg: Message, kb: InlineKeyboardMarkup) -> None:
 
 
 # ====================== Klaviaturalar ======================
-def has_https_webapp() -> bool:
-    return WEBAPP_URL.startswith("https://")
-
-
-async def send_order_status_notification(bot: Bot, db: Database, uid: int, oid: int, code: str) -> None:
-    order = db.get_order(oid)
-    items = db.order_items(oid)
-    items_summary = ", ".join(f"{it['name']} x{it['qty']}" for it in items) if items else ""
-    total_str = money(order["total"]) if order else ""
-
-    messages = {
-        "accepted": (
-            f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            + (f"🛍 Mahsulotlar: <i>{esc(items_summary)}</i>\n" if items_summary else "")
-            + (f"💰 Jami summa: <b>{total_str} so'm</b>\n\n" if total_str else "\n")
-            + "Tez orada buyurtmangiz tayyorlashga topshiriladi."
-        ),
-        "preparing": (
-            f"👨‍🍳 <b>Buyurtmangiz tayyorlanmoqda!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            + (f"🛍 Mahsulotlar: <i>{esc(items_summary)}</i>\n\n" if items_summary else "\n")
-            + "Mahsulotlaringiz jamlanib, qadoqlanmoqda."
-        ),
-        "delivering": (
-            f"🚚 <b>Buyurtmangiz yetkazilmoqda!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            + (f"💰 To'lov summasi: <b>{total_str} so'm</b>\n\n" if total_str else "\n")
-            + "Kuryerimiz buyurtmangizni yetkazish uchun yo'lga chiqdi. Iltimos, telefoningizni aloqada saqlang!"
-        ),
-        "done": (
-            f"🎉 <b>Buyurtmangiz yetkazildi va yakunlandi!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n\n"
-            + "ECO mahsulotlarini tanlaganingiz uchun tashakkur! Xaridingiz maroqli bo'lsin."
-        ),
-        "cancelled": (
-            f"❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n\n"
-            + "Agar savollaringiz bo'lsa, ma'muriyat bilan bog'lanishingiz mumkin."
-        ),
-    }
-
-    text = messages.get(code)
-    if not text:
-        return
-
-    inline_kb = None
-    if has_https_webapp():
-        inline_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
-            ]
-        )
-
-    try:
-        await bot.send_message(uid, text, reply_markup=inline_kb)
-        log.info("Foydalanuvchiga (%s) buyurtma №%s holati (%s) xabari yuborildi", uid, oid, code)
-    except Exception as e:
-        log.warning("Foydalanuvchiga (%s) holat xabari yuborilmadi: %s", uid, e)
-
-
-def main_menu(admin: bool = False, superadmin: bool = False) -> ReplyKeyboardMarkup:
-    rows = []
-    if has_https_webapp():
-        rows.append([KeyboardButton(text="🛍 Do'kon", web_app=WebAppInfo(url=WEBAPP_URL))])
-    rows.append([KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)])
-    rows.append([KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE)])
-    if superadmin:
-        rows.append([KeyboardButton(text="🏭 SuperAdmin Paneli")])
-    elif admin:
+def main_menu(admin: bool = False) -> ReplyKeyboardMarkup:
+    rows = [
+        [KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)],
+        [KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE)],
+    ]
+    if admin:
         rows.append([KeyboardButton(text=BTN_ADMIN)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
@@ -338,22 +247,9 @@ def render_cart(uid: int, edit: bool = False) -> tuple[str, InlineKeyboardMarkup
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ====================== Buyurtma kartasi (admin/diler) ======================
+# ====================== Buyurtma kartasi (admin) ======================
 def order_text(o, items) -> str:
-    header = "🆕 <b>YANGI BUYURTMA</b>" if o["status"] in ("new", "new_unassigned") else "📦 <b>BUYURTMA</b>"
-    region_info = ""
-    if o.get("region_id"):
-        reg = db.conn.execute("SELECT name FROM regions WHERE id=?", (o["region_id"],)).fetchone()
-        reg_name = reg["name"] if reg else f"Hudud #{o['region_id']}"
-        region_info = f"📍 Hudud: <b>{esc(reg_name)}</b>" + (f", {esc(o['district'])}" if o.get("district") else "")
-    dealer_info = ""
-    if o.get("dealer_id"):
-        dlr = db.get_dealer(o["dealer_id"])
-        if dlr:
-            dealer_info = f"🏢 Diler: <b>{esc(dlr['name'])}</b>"
-    elif o["status"] == "new_unassigned":
-        dealer_info = "⚠️ <b>Hududga diler biriktirilmagan!</b>"
-
+    header = "🆕 <b>YANGI BUYURTMA</b>" if o["status"] == "new" else "📦 <b>BUYURTMA</b>"
     lines = [
         header,
         "",
@@ -361,12 +257,6 @@ def order_text(o, items) -> str:
         f"👤 Mijoz: <a href=\"tg://user?id={o['user_id']}\">{esc(o['user_name'])}</a>",
         f"🆔 Telegram ID: <code>{o['user_id']}</code>",
         f"📞 Telefon: {esc(o['phone'])}",
-    ]
-    if region_info:
-        lines.append(region_info)
-    if dealer_info:
-        lines.append(dealer_info)
-    lines += [
         f"🕒 Sana: {fmt_dt(o['created_at'])}",
         f"📊 Holat: <b>{status_label(o['status'])}</b>",
         "",
@@ -413,75 +303,11 @@ async def send_order_card(bot: Bot, chat_id: int, oid: int) -> None:
 
 
 async def notify_admins(bot: Bot, oid: int) -> None:
-    targets = set(ADMIN_IDS) | set(SUPERADMIN_IDS)
-    for aid in targets:
+    for aid in ADMIN_IDS:
         try:
             await send_order_card(bot, aid, oid)
         except Exception:
             log.exception("Adminga (%s) bildirishnoma yuborilmadi. Admin botga /start bosganmi?", aid)
-
-
-async def notify_dealer(bot: Bot, dealer_id: int, oid: int) -> None:
-    order = db.get_order(oid)
-    if not order:
-        return
-    dealer = db.get_dealer(dealer_id)
-    if not dealer or not dealer.get("tg_id"):
-        log.warning("Diler topilmadi yoki tg_id yo'q: dealer_id=%s, oid=%s", dealer_id, oid)
-        await notify_admins(bot, oid)
-        return
-
-    dtg = dealer["tg_id"]
-    try:
-        await send_order_card(bot, dtg, oid)
-        log.info("Dilerga (%s, tg=%s) buyurtma №%s yuborildi", dealer["name"], dtg, oid)
-    except Exception:
-        log.exception("Dilerga (%s) buyurtma yuborishda xatolik", dtg)
-        for aid in SUPERADMIN_IDS:
-            try:
-                await bot.send_message(
-                    aid,
-                    f"⚠️ <b>Dilerga bildirishnoma yetkazilmadi!</b>\n\n"
-                    f"Buyurtma: <b>№{oid}</b>\n"
-                    f"Diler: {esc(dealer['name'])}\n"
-                    f"Viloyat: {esc(dealer.get('region_name', ''))}\n"
-                    f"Telegram ID: <code>{dtg}</code>\n\n"
-                    f"<i>Diler botga /start bosganini tekshiring.</i>"
-                )
-            except Exception:
-                pass
-
-
-async def notify_discrepancy(bot: Bot, shp_id: int, dealer_id: int, notes: str = "") -> None:
-    shp = db.get_shipment(shp_id)
-    dealer = db.get_dealer(dealer_id)
-    d_name = dealer["name"] if dealer else f"Diler #{dealer_id}"
-    reg_name = dealer["region_name"] if dealer else ""
-    t_no = shp["tracking_no"] if shp else f"#{shp_id}"
-    items = db.get_shipment_items(shp_id)
-    diff_lines = []
-    for it in items:
-        if it.get("discrepancy_qty", 0) != 0:
-            diff_lines.append(
-                f"• {it['product_name']}: yuborilgan {it['sent_qty']} ta, "
-                f"qabul qilingan {it['received_qty']} ta (kamomad: {it['discrepancy_qty']} ta)"
-            )
-    diff_text = "\n".join(diff_lines) if diff_lines else "Tafovut tafsilotlari mavjud."
-
-    msg = (
-        f"⚠️ <b>TOVAR QABULIDA TAFOVUT ANIQLANDI!</b>\n\n"
-        f"📦 Jo'natma: <b>{t_no}</b>\n"
-        f"🏢 Diler: <b>{esc(d_name)}</b> ({esc(reg_name)})\n\n"
-        f"<b>Tafovut:</b>\n{diff_text}\n"
-    )
-    if notes:
-        msg += f"\n📝 Diler izohi: <i>{esc(notes)}</i>"
-
-    for aid in SUPERADMIN_IDS:
-        try:
-            await bot.send_message(aid, msg)
-        except Exception:
-            pass
 
 
 # ====================== Mahsulotlar katalogi ======================
@@ -520,8 +346,8 @@ reg = Router()    # ro'yxatdan o'tish (hamma uchun)
 admin = Router()  # faqat adminlar
 user = Router()   # faqat ro'yxatdan o'tgan foydalanuvchilar
 
-admin.message.filter(F.from_user.id.func(is_admin_or_dealer))
-admin.callback_query.filter(F.from_user.id.func(is_admin_or_dealer))
+admin.message.filter(F.from_user.id.in_(ADMIN_IDS))
+admin.callback_query.filter(F.from_user.id.in_(ADMIN_IDS))
 
 
 class RegisteredOnly(BaseMiddleware):
@@ -558,12 +384,9 @@ async def cmd_start(m: Message, state: FSMContext):
     db.touch_user(u.id, u.full_name)
     row = db.get_user(u.id)
     if row["phone"]:
-        sup = is_superadmin(u.id)
-        adm = is_admin_or_dealer(u.id)
         await m.answer(
-            f"Assalomu alaykum, <b>{esc(row['name'])}</b>! 👋\n"
-            "ECO mahsulotlarini ko'rish va buyurtma berish uchun quyidagi menyudan foydalaning:",
-            reply_markup=main_menu(admin=adm, superadmin=sup),
+            f"Qaytganingiz bilan, <b>{esc(row['name'])}</b>! 👋\nKerakli bo'limni tanlang.",
+            reply_markup=main_menu(is_admin(u.id)),
         )
         return
     await m.answer(
@@ -574,9 +397,9 @@ async def cmd_start(m: Message, state: FSMContext):
         await ask_phone(m)
         return
     await m.answer(
-        "Bu bot tamaki mahsulotlarini sotadi. Davom etish uchun 21 yoshdan oshganingizni tasdiqlang.",
+        "Bu bot tamaki mahsulotlarini sotadi. Davom etish uchun 18 yoshdan oshganingizni tasdiqlang.",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[btn("✅ Ha, 21 yoshdaman", "age_yes"), btn("❌ Yo'q", "age_no")]]
+            inline_keyboard=[[btn("✅ Ha, 18 yoshdaman", "age_yes"), btn("❌ Yo'q", "age_no")]]
         ),
     )
 
@@ -592,7 +415,7 @@ async def age_yes(cb: CallbackQuery):
 
 @reg.callback_query(F.data == "age_no")
 async def age_no(cb: CallbackQuery):
-    await safe_edit_text(cb.message, "Kechirasiz, bu bot faqat 21 yoshdan oshganlar uchun.")
+    await safe_edit_text(cb.message, "Kechirasiz, bu bot faqat 18 yoshdan oshganlar uchun.")
     await cb.answer()
 
 
@@ -613,11 +436,9 @@ async def on_contact(m: Message):
     phone = c.phone_number if c.phone_number.startswith("+") else "+" + c.phone_number
     db.register(u.id, u.full_name, phone)
     log.info("Yangi foydalanuvchi ro'yxatdan o'tdi: %s", u.id)
-    sup = is_superadmin(u.id)
-    adm = is_admin_or_dealer(u.id)
     await m.answer(
-        "✅ Ro'yxatdan o'tdingiz! Buyurtma berish uchun quyidagi menyudan foydalaning:",
-        reply_markup=main_menu(admin=adm, superadmin=sup),
+        "✅ Ro'yxatdan o'tdingiz! Endi mahsulotlarni tanlashingiz mumkin.",
+        reply_markup=main_menu(is_admin(u.id)),
     )
 
 
@@ -675,28 +496,9 @@ async def a_panel(m: Message):
     )
 
 
-@admin.message(F.text == "🏭 SuperAdmin Paneli")
-async def m_superadmin_panel(m: Message):
-    if not is_superadmin(m.from_user.id):
-        await m.answer("Faqat SuperAdmin uchun ruxsat etilgan.")
-        return
-    text = (
-        "👑 <b>ECO ZAVOD BOSHQARUV PANELI (SUPERADMIN)</b>\n\n"
-        "Butun zavod ombori, 12 ta viloyat dilerlari, tovar taqsimoti, barcha buyurtmalar va "
-        "moliyaviy hisobotlarni boshqarish uchun pastdagi tugmani bosing:"
-    )
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🏭 Zavod Panelini Ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
-        ]
-    ) if has_https_webapp() else None
-    await m.answer(text, reply_markup=kb)
-
-
 @admin.message(F.text == A_BACK)
 async def a_back(m: Message):
-    sup = is_superadmin(m.from_user.id)
-    await m.answer("Asosiy menyu.", reply_markup=main_menu(admin=True, superadmin=sup))
+    await m.answer("Asosiy menyu.", reply_markup=main_menu(True))
 
 
 @admin.message(F.text == A_NEW)
@@ -768,14 +570,6 @@ async def a_set_status(cb: CallbackQuery, bot: Bot):
     if not o:
         await cb.answer("Buyurtma topilmadi", show_alert=True)
         return
-
-    uid = cb.from_user.id
-    if not is_admin(uid):
-        dealer = db.get_dealer_by_tg_id(uid)
-        if not dealer or o.get("dealer_id") != dealer["id"]:
-            await cb.answer("❌ Bu buyurtma sizning hududingizga tegishli emas!", show_alert=True)
-            return
-
     if code not in FLOW:
         await cb.answer("Noto'g'ri holat", show_alert=True)
         return
@@ -786,12 +580,15 @@ async def a_set_status(cb: CallbackQuery, bot: Bot):
     if o["status"] == code:
         await cb.answer("Buyurtma allaqachon shu holatda.")
         return
-    db.set_status(oid, code, actor_id=uid)
-    log.info("Buyurtma №%s holati: %s -> %s (foydalanuvchi %s)", oid, o["status"], code, uid)
+    db.set_status(oid, code)
+    log.info("Buyurtma №%s holati: %s -> %s (admin %s)", oid, o["status"], code, cb.from_user.id)
     o = db.get_order(oid)
     await cb.answer(f"Holat: {STATUSES[code]}")
     await safe_edit_text(cb.message, order_text(o, db.order_items(oid)), admin_order_kb(o))
-    await send_order_status_notification(bot, db, o["user_id"], oid, code)
+    try:
+        await bot.send_message(o["user_id"], USER_STATUS_MSG[code].format(oid=oid))
+    except Exception:
+        log.exception("Foydalanuvchiga (%s) holat xabari yuborilmadi", o["user_id"])
 
 
 @admin.message(F.text == A_STATS)
@@ -906,10 +703,7 @@ async def m_cart(m: Message):
 @user.callback_query(F.data == "cart")
 async def cb_cart(cb: CallbackQuery):
     text, kb = render_cart(cb.from_user.id)
-    if cb.message.text is None:
-        await cb.message.answer(text, reply_markup=kb)
-    else:
-        await safe_edit_text(cb.message, text, kb)
+    await safe_edit_text(cb.message, text, kb)
     await cb.answer()
 
 
@@ -1018,7 +812,7 @@ async def order_confirm(cb: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
     await state.clear()
     try:
-        status, oid, dealer_id = db.create_order(cb.from_user.id, data["lat"], data["lon"], data["total"])
+        status, oid = db.create_order(cb.from_user.id, data["lat"], data["lon"], data["total"])
     except KeyError:
         await safe_edit_text(cb.message, "Ma'lumotlar eskirgan. Savatchadan qaytadan boshlang.")
         await cb.answer()
@@ -1030,22 +824,14 @@ async def order_confirm(cb: CallbackQuery, state: FSMContext, bot: Bot):
             cb.message,
             "⚠️ Savatcha yoki narxlar o'zgargan. Iltimos, savatchani qayta tekshirib, buyurtmani qaytadan bering.",
         )
-    elif status == "no_stock":
-        await safe_edit_text(
-            cb.message,
-            "⚠️ Kechirasiz, hududingizdagi diler omborida mahsulot qoldig'i yetarli emas.",
-        )
     else:
-        log.info("Yangi buyurtma №%s (foydalanuvchi %s, diler %s)", oid, cb.from_user.id, dealer_id)
+        log.info("Yangi buyurtma №%s (foydalanuvchi %s)", oid, cb.from_user.id)
         await safe_edit_text(
             cb.message,
             f"✅ Buyurtmangiz qabul qilindi!\n\nBuyurtma raqami: <b>№{oid}</b>\n"
             "Tez orada siz bilan bog'lanamiz. Buyurtma holati o'zgarganda xabar beramiz.",
         )
-        if dealer_id:
-            await notify_dealer(bot, dealer_id, oid)
-        else:
-            await notify_admins(bot, oid)
+        await notify_admins(bot, oid)
     await cb.answer()
 
 
@@ -1114,20 +900,6 @@ async def backup_loop() -> None:
         await asyncio.sleep(24 * 3600)
 
 
-async def keepalive_loop() -> None:
-    """Render Free rejasida server uxshab qolmasligi uchun har 9 daqiqada o'zini ping qiladi."""
-    await asyncio.sleep(20)
-    target_url = (WEBAPP_URL.rstrip("/") + "/api/health") if WEBAPP_URL.startswith("http") else f"http://127.0.0.1:{WEBAPP_PORT}/api/health"
-    async with aiohttp.ClientSession() as session:
-        while True:
-            try:
-                async with session.get(target_url, timeout=10) as r:
-                    log.info("Keep-alive ping muvaffaqiyatli: %s (status=%d)", target_url, r.status)
-            except Exception as e:
-                log.debug("Keep-alive ping: %s", e)
-            await asyncio.sleep(540)
-
-
 async def main() -> None:
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
@@ -1155,46 +927,37 @@ async def main() -> None:
         except Exception:
             log.warning("Admin (%s) uchun buyruqlar o'rnatilmadi (admin hali /start bosmagan bo'lishi mumkin)", aid)
 
-    if has_https_webapp():
-        try:
-            await bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(text="🛍 Do'kon", web_app=WebAppInfo(url=WEBAPP_URL))
-            )
-            log.info("Telegram Mini App menyu tugmasi yoqildi: %s", WEBAPP_URL)
-        except Exception:
-            log.exception("Mini App menyu tugmasi o'rnatilmadi")
-    else:
-        try:
-            await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
-        except Exception:
-            pass
-
-    async def notify_user_status(uid: int, oid: int, code: str) -> None:
-        await send_order_status_notification(bot, db, uid, oid, code)
-
-    webapp = create_webapp(
-        db,
-        notify_admins_cb=lambda oid: notify_admins(bot, oid),
-        notify_dealer_cb=lambda did, oid: notify_dealer(bot, did, oid),
-        notify_user_status_cb=notify_user_status,
-        notify_discrepancy_cb=lambda sid, did, note: notify_discrepancy(bot, sid, did, note),
-    )
-    web_runner = web.AppRunner(webapp)
-    await web_runner.setup()
-    web_site = web.TCPSite(web_runner, WEBAPP_HOST, WEBAPP_PORT)
-    await web_site.start()
-    log.info("Mini App server ishga tushdi: http://%s:%s", WEBAPP_HOST, WEBAPP_PORT)
-
     backup_task = asyncio.create_task(backup_loop())
-    keepalive_task = asyncio.create_task(keepalive_loop())
     me = await bot.get_me()
     log.info("Bot ishga tushdi: @%s", me.username)
+
+    # Render yoki boshqa hostinglar uchun port tinglash (health check)
+    port = os.getenv("PORT")
+    web_runner = None
+    if port:
+        try:
+            from aiohttp import web
+
+            async def health(_req):
+                return web.Response(text="ECO Bot 100% aktiv ishlamoqda!")
+
+            srv = web.Application()
+            srv.router.add_get("/", health)
+            srv.router.add_get("/health", health)
+            web_runner = web.AppRunner(srv)
+            await web_runner.setup()
+            site = web.TCPSite(web_runner, "0.0.0.0", int(port))
+            await site.start()
+            log.info("Health check server %s portda tinglamoqda", port)
+        except Exception:
+            log.exception("Health check serverni ishga tushirishda xatolik")
+
     try:
         await dp.start_polling(bot)
     finally:
         backup_task.cancel()
-        keepalive_task.cancel()
-        await web_runner.cleanup()
+        if web_runner:
+            await web_runner.cleanup()
         await bot.session.close()
 
 
