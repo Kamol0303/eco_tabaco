@@ -954,7 +954,21 @@ async def main() -> None:
             log.exception("Health check serverni ishga tushirishda xatolik")
 
     try:
-        await dp.start_polling(bot)
+        await bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+    try:
+        while True:
+            try:
+                await dp.start_polling(bot, handle_signals=False)
+                break
+            except Exception as e:
+                if "Conflict" in type(e).__name__ or "conflict" in str(e).lower():
+                    log.warning("Boshqa bot nusxasi to'xtashi kutilmoqda (5 soniya)...")
+                    await asyncio.sleep(5)
+                else:
+                    raise
     finally:
         backup_task.cancel()
         if web_runner:
