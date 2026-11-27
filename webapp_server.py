@@ -908,8 +908,13 @@ async def speed_middleware(request: web.Request, handler):
     except Exception:
         pass
     path = request.path
-    if path.startswith("/static/") or path.startswith("/images/"):
+    if path.startswith("/images/"):
         resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    elif path.startswith("/static/"):
+        if "app.js" in path:
+            resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        else:
+            resp.headers["Cache-Control"] = "public, max-age=86400"
     elif path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resp

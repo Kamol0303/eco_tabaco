@@ -1179,7 +1179,10 @@
       const superStF = document.getElementById("superOrderStatusFilter");
       if (superStF && state.statuses) {
         superStF.innerHTML = '<option value="">Barcha holatlar</option>' + 
-          Object.keys(state.statuses).map(k => `<option value="${k}">${esc(state.statuses[k])}</option>`).join("");
+          Object.keys(state.statuses).map(k => {
+            const label = (state.statuses[k] && state.statuses[k].label) ? state.statuses[k].label : state.statuses[k];
+            return `<option value="${k}">${esc(label)}</option>`;
+          }).join("");
       }
 
       renderCatalog();
@@ -1187,6 +1190,9 @@
       renderOrders();
       renderProfile();
       renderHeader();
+
+      const loadingEl = document.getElementById("viewLoading");
+      if (loadingEl) loadingEl.classList.remove("active");
 
       if (state.user.is_superadmin) {
         showSuperTab(state.activeSuperTab || "catalog");
@@ -1197,12 +1203,19 @@
         showCustomerTab(state.activeTab || "catalog");
       }
     } catch (e) {
+      console.error("Bootstrap xatosi:", e);
+      const loadingEl = document.getElementById("viewLoading");
+      if (loadingEl) loadingEl.classList.remove("active");
+
       if (e.status === 401) {
         document.getElementById("blockedMessage").textContent = e.message;
         hideAllViews();
         document.getElementById("viewBlocked").classList.add("active");
       } else {
-        showToast(e.message, true);
+        showToast(e.message || "Yuklashda xatolik yuz berdi", true);
+        renderCatalog();
+        const v = document.getElementById("viewCatalog");
+        if (v) v.classList.add("active");
       }
     }
   }
@@ -1650,9 +1663,15 @@
     } catch (_) {}
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function start() {
     initTelegramTheme();
     bindEvents();
     bootstrap();
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
 })();
