@@ -29,6 +29,15 @@
     currentShipmentConfirmId: null,
   };
 
+  function formatImgUrl(url) {
+    if (!url) return "";
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (window.location.hostname.includes("github.io")) {
+      return url.replace(/^\//, "");
+    }
+    return url;
+  }
+
   // ---------------- Yordamchilar ----------------
   function esc(val) {
     return String(val ?? "")
@@ -72,7 +81,12 @@
     toastTimer = setTimeout(() => el.classList.add("hidden"), 2800);
   }
 
+  const API_BASE = window.location.hostname.includes("github.io")
+    ? "https://eco-tabaco.onrender.com"
+    : "";
+
   async function api(path, options = {}) {
+    const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
     const headers = Object.assign(
       { "Content-Type": "application/json" },
       options.headers || {}
@@ -80,7 +94,7 @@
     if (tg && tg.initData) {
       headers["X-Telegram-Init-Data"] = tg.initData;
     }
-    const res = await fetch(path, Object.assign({}, options, { headers }));
+    const res = await fetch(url, Object.assign({}, options, { headers }));
     let data = {};
     try {
       data = await res.json();
@@ -292,7 +306,7 @@
         const qty = getCartQty(p.id);
         const keyClass = esc(p.key);
         const imgHtml = p.image_url
-          ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" />`
+          ? `<img src="${esc(formatImgUrl(p.image_url))}" alt="${esc(p.name)}" loading="lazy" />`
           : "";
         const controlHtml = `
           <div class="qty-pill ${qty === 0 ? "is-zero" : ""}" data-pid="${p.id}">
@@ -344,7 +358,7 @@
     if (!p) return;
     state.modalProductId = pid;
     const modal = document.getElementById("productModal");
-    document.getElementById("modalProductImg").src = p.image_url || "";
+    document.getElementById("modalProductImg").src = formatImgUrl(p.image_url) || "";
     document.getElementById("modalProductImg").alt = p.name;
     const tag = document.getElementById("modalProductTag");
     tag.textContent = p.key.toUpperCase();

@@ -902,11 +902,19 @@ class WebAppHandler:
 
 @web.middleware
 async def speed_middleware(request: web.Request, handler):
+    cors_headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, X-Telegram-Init-Data",
+    }
+    if request.method == "OPTIONS":
+        return web.Response(status=200, headers=cors_headers)
     resp = await handler(request)
     try:
         resp.enable_compression()
     except Exception:
         pass
+    resp.headers.update(cors_headers)
     path = request.path
     if path.startswith("/images/"):
         resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
