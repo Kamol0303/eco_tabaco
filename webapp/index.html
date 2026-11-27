@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>ECO · Innovation Tobacco</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='17' fill='%230b0e0c' stroke='%23e6b82e' stroke-width='2'/%3E%3Cpath d='M18 9c-3.5 4-5 7.5-5 11 0 3 2.2 5.5 5 5.5s5-2.5 5-5.5c0-3.5-1.5-7-5-11z' fill='%23e6b82e'/%3E%3C/svg%3E" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="/static/styles.css?v=4" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Top Header -->
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-emblem" aria-hidden="true">
+          <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="18" r="16.5" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.45"/>
+            <path d="M18 9C14.5 13 13 16.5 13 20C13 23 15.2 25.5 18 25.5C20.8 25.5 23 23 23 20C23 16.5 21.5 13 18 9Z" stroke="currentColor" stroke-width="1.6" fill="currentColor" fill-opacity="0.16"/>
+            <path d="M18 14V25.5M18 19.5L21 17M18 21.5L15 19" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">ECO</span>
+          <span class="brand-sub" id="brandSubTitle">INNOVATION TOBACCO</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <div id="userBadge" class="user-pill" aria-label="Profil">
+          <span class="status-dot"></span>
+          <span id="userBadgeName">Yuklanmoqda...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Viewport -->
+    <main class="main-content">
+      <!-- Loading Skeleton -->
+      <section id="viewLoading" class="view active">
+        <div class="skeleton-hero"></div>
+        <div class="skeleton-grid">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
+      </section>
+
+      <!-- Auth Blocked View (outside Telegram without local preview) -->
+      <section id="viewBlocked" class="view">
+        <div class="empty-card">
+          <div class="empty-icon">🔒</div>
+          <h2>Telegram Mini App</h2>
+          <p id="blockedMessage">Ushbu do'konni faqat Telegram bot ichidan ochish mumkin.</p>
+        </div>
+      </section>
+
+      <!-- ==================== FOYDALANUVCHI BO'LIMLARI ==================== -->
+
+      <!-- Mijoz Tab 1: Catalog -->
+      <section id="viewCatalog" class="view customer-view">
+        <div class="hero-card">
+          <div class="hero-glow"></div>
+          <div class="hero-badge">ORIGINAL BRAND · CLASSIC RECEIPT</div>
+          <h1 class="hero-title">Fermentlangan Premium Tamaki</h1>
+          <p class="hero-desc">Tabiiy barglar, muvozanatli ta'm va tezkor yetkazib berish xizmati.</p>
+          <div class="hero-meta">
+            <span class="meta-chip">🌿 100% Original</span>
+            <span class="meta-chip">🚚 Tez yetkazish</span>
+            <span class="meta-chip">🔞 21+</span>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <h2>Mahsulotlar katalogi</h2>
+          <span id="productCountLabel" class="muted-label"></span>
+        </div>
+
+        <div id="catalogGrid" class="catalog-grid"></div>
+      </section>
+
+      <!-- Mijoz Tab 2: Cart & Checkout -->
+      <section id="viewCart" class="view customer-view">
+        <div class="section-head">
+          <h2>Savatcha</h2>
+          <button type="button" id="btnClearCart" class="ghost-danger-btn hidden">🗑 Tozalash</button>
+        </div>
+
+        <div id="cartEmpty" class="empty-card hidden">
+          <div class="empty-icon">🛒</div>
+          <h3>Savatchangiz hozircha bo'sh</h3>
+          <p>Katalogdan yoqtirgan mahsulotlaringizni tanlab, savatchaga qo'shing.</p>
+          <button type="button" class="btn-primary" data-go-tab="catalog">Mahsulotlarni ko'rish</button>
+        </div>
+
+        <div id="cartFilled" class="hidden">
+          <div id="cartItemsList" class="cart-list"></div>
+
+          <div class="summary-card">
+            <div class="summary-row">
+              <span>Mahsulotlar soni</span>
+              <strong id="cartTotalQty">0 ta</strong>
+            </div>
+            <div class="summary-row total">
+              <span>Jami to'lov</span>
+              <strong id="cartTotalSum" class="gold-text">0 so'm</strong>
+            </div>
+          </div>
+
+          <!-- Registration Step (shown inside checkout if user has no phone yet) -->
+          <div id="checkoutRegCard" class="panel-card hidden">
+            <div class="panel-title">
+              <span class="step-num">1</span>
+              <div>
+                <h3>Aloqa ma'lumotlari</h3>
+                <p>Buyurtmani tasdiqlash uchun ism va telefon raqamingiz kerak</p>
+              </div>
+            </div>
+            <div class="form-stack">
+              <label class="field">
+                <span>Ismingiz</span>
+                <input type="text" id="regNameInput" placeholder="Ismingizni kiriting" maxlength="80" />
+              </label>
+              <label class="field">
+                <span>Telefon raqamingiz</span>
+                <input type="tel" id="regPhoneInput" placeholder="+998 90 123 45 67" maxlength="20" />
+              </label>
+              <div class="form-actions">
+                <button type="button" id="btnTgContact" class="btn-secondary hidden">📱 Telegram raqamni olish</button>
+                <button type="button" id="btnSaveReg" class="btn-primary">Saqlash va davom etish</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Delivery Location Step -->
+          <div id="checkoutLocationCard" class="panel-card">
+            <div class="panel-title">
+              <span class="step-num">📍</span>
+              <div>
+                <h3>Yetkazib berish manzili</h3>
+                <p>Xaritadan nuqtani tanlang yoki GPS tugmasini bosing</p>
+              </div>
+            </div>
+
+            <div class="location-toolbar">
+              <button type="button" id="btnDetectLocation" class="btn-secondary full-width">
+                <span class="btn-icon">🎯</span> Mening hozirgi joylashuvim
+              </button>
+            </div>
+
+            <div id="mapContainer" class="map-box">
+              <div id="deliveryMap" class="leaflet-host"></div>
+              <div id="mapOfflineFallback" class="map-fallback hidden">
+                <span>Xarita yuklanmadi — koordinatalarni qo'lda kiriting</span>
+              </div>
+            </div>
+
+            <div class="coords-row">
+              <label class="field compact">
+                <span>Kenglik (Lat)</span>
+                <input type="number" step="0.000001" id="latInput" value="41.299500" />
+              </label>
+              <label class="field compact">
+                <span>Uzunlik (Lon)</span>
+                <input type="number" step="0.000001" id="lonInput" value="69.240100" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Confirm Checkout Button -->
+          <div class="checkout-footer">
+            <div id="checkoutUserPreview" class="user-mini-note"></div>
+            <button type="button" id="btnPlaceOrder" class="btn-primary btn-lg full-width">
+              ✅ Buyurtmani tasdiqlash
+            </button>
+          </div>
+        </div>
+
+        <!-- Order Success View -->
+        <div id="orderSuccessCard" class="success-card hidden">
+          <div class="success-ring">✓</div>
+          <h3>Buyurtmangiz qabul qilindi!</h3>
+          <p class="order-num-badge">Buyurtma raqami: <strong id="successOrderId">№0</strong></p>
+          <p class="muted-label">Tez orada operatorimiz siz bilan bog'lanadi. Buyurtma holati o'zgarganda Telegram orqali xabar beramiz.</p>
+          <div class="success-actions">
+            <button type="button" class="btn-primary" data-go-tab="orders">📦 Buyurtmalarimni ko'rish</button>
+            <button type="button" class="btn-secondary" data-go-tab="catalog">🛍 Katalogga qaytish</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mijoz Tab 3: Orders -->
+      <section id="viewOrders" class="view customer-view">
+        <div class="section-head">
+          <h2>Buyurtmalarim</h2>
+          <button type="button" id="btnRefreshOrders" class="icon-pill-btn">↻ Yangilash</button>
+        </div>
+        <div id="ordersList" class="orders-stack"></div>
+      </section>
+
+      <!-- Mijoz Tab 4: Profile -->
+      <section id="viewProfile" class="view customer-view">
+        <div class="section-head">
+          <h2>Ma'lumotlarim</h2>
+        </div>
+
+        <div class="profile-hero-card">
+          <div class="profile-avatar" id="profileAvatar">E</div>
+          <div class="profile-meta">
+            <h3 id="profileDisplayName">Foydalanuvchi</h3>
+            <p id="profileDisplayPhone">Telefon kiritilmagan</p>
+            <div class="profile-badges">
+              <span class="mini-badge" id="profileAgeBadge">🔞 21+</span>
+              <span class="mini-badge" id="profileIdBadge">ID: -</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-title">
+            <span class="step-num">✏️</span>
+            <div>
+              <h3>Ma'lumotlarni tahrirlash</h3>
+              <p>Yetkazib berishda bog'lanish uchun ma'lumotlaringiz</p>
+            </div>
+          </div>
+          <div class="form-stack">
+            <label class="field">
+              <span>Ism</span>
+              <input type="text" id="profNameInput" maxlength="80" placeholder="Ismingiz" />
+            </label>
+            <label class="field">
+              <span>Telefon raqam</span>
+              <input type="tel" id="profPhoneInput" maxlength="20" placeholder="+998 90 123 45 67" />
+            </label>
+            <div class="form-actions">
+              <button type="button" id="btnProfTgContact" class="btn-secondary hidden">📱 Telegramdan olish</button>
+              <button type="button" id="btnSaveProfile" class="btn-primary">Saqlash</button>
+            </div>
+            <p id="profRegDate" class="muted-label small"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== FAQAT ADMIN BO'LIMLARI ==================== -->
+
+      <!-- Admin Tab 1: Buyurtmalar -->
+      <section id="viewAdminOrders" class="view admin-view">
+        <div class="section-head">
+          <h2>Buyurtmalar boshqaruvi</h2>
+          <button type="button" id="btnRefreshAdminOrders" class="icon-pill-btn">↻ Yangilash</button>
+        </div>
+
+        <div class="search-bar">
+          <input type="search" id="adminSearchInput" placeholder="Ism, telefon yoki № raqam bo'yicha qidirish..." />
+          <button type="button" id="btnAdminSearch" class="btn-secondary">Qidirish</button>
+        </div>
+        <div class="filter-chips" id="adminStatusChips"></div>
+        <div id="adminOrdersList" class="orders-stack"></div>
+      </section>
+
+      <!-- Admin Tab 2: Mahsulotlar & Narxlar -->
+      <section id="viewAdminProducts" class="view admin-view">
+        <div class="section-head">
+          <h2>Mahsulotlar va Narxlar</h2>
+          <button type="button" id="btnRefreshAdminProducts" class="icon-pill-btn">↻ Yangilash</button>
+        </div>
+        <div id="adminProductsList" class="admin-products-stack"></div>
+      </section>
+
+      <!-- Admin Tab 3: Statistika -->
+      <section id="viewAdminStats" class="view admin-view">
+        <div class="section-head">
+          <h2>Savdo statistikasi</h2>
+          <button type="button" id="btnRefreshAdminStats" class="icon-pill-btn">↻ Yangilash</button>
+        </div>
+        <div class="stats-grid" id="adminStatsGrid"></div>
+      </section>
+
+      <!-- Admin Tab 4: Mijozlar -->
+      <section id="viewAdminUsers" class="view admin-view">
+        <div class="section-head">
+          <h2>Ro'yxatdan o'tgan mijozlar</h2>
+          <button type="button" id="btnRefreshAdminUsers" class="icon-pill-btn">↻ Yangilash</button>
+        </div>
+        <div id="adminUsersList" class="users-stack"></div>
+      </section>
+    </main>
+
+    <!-- Floating Quick Cart Bar (Faqat mijozga, savatchada mahsulot bo'lganda) -->
+    <div id="floatingCartBar" class="floating-cart hidden">
+      <div class="floating-cart-info">
+        <span id="floatingCartCount" class="fc-count">0 ta</span>
+        <strong id="floatingCartTotal" class="fc-total">0 so'm</strong>
+      </div>
+      <button type="button" id="btnGoCartFromFloat" class="btn-primary btn-sm">Savatcha →</button>
+    </div>
+
+    <!-- ==================== FOYDALANUVCHI MENYUSI ==================== -->
+    <nav class="bottom-nav customer-nav" id="customerNav">
+      <button type="button" class="nav-item active" data-tab="catalog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <path d="M16 10a4 4 0 0 1-8 0"></path>
+        </svg>
+        <span>Katalog</span>
+      </button>
+
+      <button type="button" class="nav-item" data-tab="cart">
+        <div class="nav-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="21" r="1"></circle>
+            <circle cx="20" cy="21" r="1"></circle>
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+          </svg>
+          <span id="navCartBadge" class="nav-badge hidden">0</span>
+        </div>
+        <span>Savatcha</span>
+      </button>
+
+      <button type="button" class="nav-item" data-tab="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        <span>Buyurtma</span>
+      </button>
+
+      <button type="button" class="nav-item" data-tab="profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        <span>Profil</span>
+      </button>
+    </nav>
+
+    <!-- ==================== FAQAT ADMIN MENYUSI ==================== -->
+    <nav class="bottom-nav admin-nav hidden" id="adminNav">
+      <button type="button" class="nav-item active" data-admin-tab="orders">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+          <rect x="9" y="3" width="6" height="4" rx="2"></rect>
+          <path d="M9 14l2 2 4-4"></path>
+        </svg>
+        <span>Buyurtmalar</span>
+      </button>
+
+      <button type="button" class="nav-item" data-admin-tab="products">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+          <line x1="7" y1="7" x2="7.01" y2="7"></line>
+        </svg>
+        <span>Mahsulotlar</span>
+      </button>
+
+      <button type="button" class="nav-item" data-admin-tab="stats">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+        <span>Statistika</span>
+      </button>
+
+      <button type="button" class="nav-item" data-admin-tab="users">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+        <span>Mijozlar</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Product Detail Bottom Sheet (Mijoz uchun) -->
+  <div id="productModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="sheet-card">
+      <button type="button" id="btnCloseProductModal" class="sheet-close" aria-label="Yopish">✕</button>
+      <div class="sheet-image-wrap">
+        <img id="modalProductImg" src="" alt="" />
+        <span id="modalProductTag" class="variant-tag"></span>
+      </div>
+      <div class="sheet-body">
+        <div class="sheet-head">
+          <h3 id="modalProductName"></h3>
+          <span id="modalProductPrice" class="sheet-price"></span>
+        </div>
+        <p id="modalProductDesc" class="sheet-desc"></p>
+        <div class="sheet-controls">
+          <div class="qty-pill large">
+            <button type="button" id="modalDecBtn">−</button>
+            <span id="modalQtyVal">0</span>
+            <button type="button" id="modalIncBtn">+</button>
+          </div>
+          <button type="button" id="modalPrimaryBtn" class="btn-primary flex-1">Savatchaga qo'shish</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 21+ Age Verification Gate Modal (Faqat mijoz uchun) -->
+  <div id="ageGateModal" class="modal-backdrop age-gate hidden" aria-modal="true" role="dialog">
+    <div class="age-card">
+      <div class="age-crest">21+</div>
+      <h2>Yoshni tasdiqlash</h2>
+      <p id="ageGatePrompt">Ushbu do'kon tamaki mahsulotlarini sotadi. Davom etish uchun 21 yoshdan oshganingizni tasdiqlang.</p>
+      <div id="ageGateActions" class="age-actions">
+        <button type="button" id="btnAgeYes" class="btn-primary full-width">✅ Ha, 21 yoshdaman</button>
+        <button type="button" id="btnAgeNo" class="btn-secondary full-width">❌ Yo'q</button>
+      </div>
+      <div id="ageBlockedNotice" class="hidden">
+        <p class="danger-note">Kechirasiz, ushbu do'kon faqat 21 yoshdan oshganlar uchun mo'ljallangan.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js?v=4"></script>
+</body>
+</html>
