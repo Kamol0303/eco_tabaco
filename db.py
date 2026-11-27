@@ -97,6 +97,10 @@ class Database:
         cur = self.conn.execute("UPDATE products SET price=? WHERE key=?", (price, key))
         return cur.rowcount > 0
 
+    def set_price_by_id(self, pid: int, price: int) -> bool:
+        cur = self.conn.execute("UPDATE products SET price=? WHERE id=?", (price, pid))
+        return cur.rowcount > 0
+
     def toggle_product(self, pid: int) -> None:
         self.conn.execute("UPDATE products SET active = 1 - active WHERE id=?", (pid,))
 
@@ -121,7 +125,7 @@ class Database:
 
     def register(self, tg_id: int, name: str, phone: str) -> None:
         self.conn.execute(
-            "UPDATE users SET name=?, phone=?, registered_at=? WHERE tg_id=?",
+            "UPDATE users SET name=?, phone=?, registered_at=COALESCE(registered_at, ?) WHERE tg_id=?",
             (name, phone, now_str(), tg_id),
         )
 
@@ -197,35 +201,6 @@ class Database:
             self.conn.execute("DELETE FROM cart WHERE user_id=?", (uid,))
             self.conn.execute("COMMIT")
             return "ok", oid
-        except Exception:
-            self.conn.execute("ROLLBACK")
-            raise
-
-    def create_direct_order(
-        self,
-        uid: int,
-        user_name: str,
-        phone: str,
-        total: int,
-        items: list[tuple[str, int, int]],
-        lat: float | None = None,
-        lon: float | None = None,
-    ) -> int:
-        """To'g'ridan-to'g'ri (masalan, Mini App orqali) buyurtma yaratish."""
-        self.conn.execute("BEGIN IMMEDIATE")
-        try:
-            cur = self.conn.execute(
-                "INSERT INTO orders(user_id, user_name, phone, total, lat, lon, status, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'new', ?)",
-                (uid, user_name, phone, total, lat, lon, now_str()),
-            )
-            oid = cur.lastrowid
-            self.conn.executemany(
-                "INSERT INTO order_items(order_id, product_name, price, qty) VALUES (?, ?, ?, ?)",
-                [(oid, name, price, qty) for name, price, qty in items],
-            )
-            self.conn.execute("COMMIT")
-            return oid
         except Exception:
             self.conn.execute("ROLLBACK")
             raise

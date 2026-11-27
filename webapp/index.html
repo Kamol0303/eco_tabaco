@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <link rel="stylesheet" href="/static/styles.css?v=4" />
+  <link rel="stylesheet" href="/static/styles.css?v=7" />
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -27,15 +27,19 @@
         </div>
         <div class="brand-text">
           <span class="brand-name">ECO</span>
-          <span class="brand-sub" id="brandSubTitle">INNOVATION TOBACCO</span>
+          <span class="brand-sub">INNOVATION TOBACCO</span>
         </div>
       </div>
 
       <div class="topbar-right">
-        <div id="userBadge" class="user-pill" aria-label="Profil">
+        <div id="demoSwitcher" class="demo-switcher hidden" title="Brauzer sinov rejimi">
+          <button type="button" class="demo-btn active" data-role="customer">Mijoz</button>
+          <button type="button" class="demo-btn" data-role="admin">Admin</button>
+        </div>
+        <button type="button" id="userBadge" class="user-pill" aria-label="Profil">
           <span class="status-dot"></span>
           <span id="userBadgeName">Yuklanmoqda...</span>
-        </div>
+        </button>
       </div>
     </header>
 
@@ -60,10 +64,8 @@
         </div>
       </section>
 
-      <!-- ==================== FOYDALANUVCHI BO'LIMLARI ==================== -->
-
-      <!-- Mijoz Tab 1: Catalog -->
-      <section id="viewCatalog" class="view customer-view">
+      <!-- Tab 1: Catalog -->
+      <section id="viewCatalog" class="view">
         <div class="hero-card">
           <div class="hero-glow"></div>
           <div class="hero-badge">ORIGINAL BRAND · CLASSIC RECEIPT</div>
@@ -84,8 +86,8 @@
         <div id="catalogGrid" class="catalog-grid"></div>
       </section>
 
-      <!-- Mijoz Tab 2: Cart & Checkout -->
-      <section id="viewCart" class="view customer-view">
+      <!-- Tab 2: Cart & Checkout -->
+      <section id="viewCart" class="view">
         <div class="section-head">
           <h2>Savatcha</h2>
           <button type="button" id="btnClearCart" class="ghost-danger-btn hidden">🗑 Tozalash</button>
@@ -194,8 +196,8 @@
         </div>
       </section>
 
-      <!-- Mijoz Tab 3: Orders -->
-      <section id="viewOrders" class="view customer-view">
+      <!-- Tab 3: Orders -->
+      <section id="viewOrders" class="view">
         <div class="section-head">
           <h2>Buyurtmalarim</h2>
           <button type="button" id="btnRefreshOrders" class="icon-pill-btn">↻ Yangilash</button>
@@ -203,8 +205,8 @@
         <div id="ordersList" class="orders-stack"></div>
       </section>
 
-      <!-- Mijoz Tab 4: Profile -->
-      <section id="viewProfile" class="view customer-view">
+      <!-- Tab 4: Profile -->
+      <section id="viewProfile" class="view">
         <div class="section-head">
           <h2>Ma'lumotlarim</h2>
         </div>
@@ -247,52 +249,44 @@
         </div>
       </section>
 
-      <!-- ==================== FAQAT ADMIN BO'LIMLARI ==================== -->
-
-      <!-- Admin Tab 1: Buyurtmalar -->
-      <section id="viewAdminOrders" class="view admin-view">
+      <!-- Tab 5: Admin Panel -->
+      <section id="viewAdmin" class="view">
         <div class="section-head">
-          <h2>Buyurtmalar boshqaruvi</h2>
-          <button type="button" id="btnRefreshAdminOrders" class="icon-pill-btn">↻ Yangilash</button>
+          <h2>Admin Panel</h2>
+          <button type="button" id="btnRefreshAdmin" class="icon-pill-btn">↻ Yangilash</button>
         </div>
 
-        <div class="search-bar">
-          <input type="search" id="adminSearchInput" placeholder="Ism, telefon yoki № raqam bo'yicha qidirish..." />
-          <button type="button" id="btnAdminSearch" class="btn-secondary">Qidirish</button>
-        </div>
-        <div class="filter-chips" id="adminStatusChips"></div>
-        <div id="adminOrdersList" class="orders-stack"></div>
-      </section>
-
-      <!-- Admin Tab 2: Mahsulotlar & Narxlar -->
-      <section id="viewAdminProducts" class="view admin-view">
-        <div class="section-head">
-          <h2>Mahsulotlar va Narxlar</h2>
-          <button type="button" id="btnRefreshAdminProducts" class="icon-pill-btn">↻ Yangilash</button>
-        </div>
-        <div id="adminProductsList" class="admin-products-stack"></div>
-      </section>
-
-      <!-- Admin Tab 3: Statistika -->
-      <section id="viewAdminStats" class="view admin-view">
-        <div class="section-head">
-          <h2>Savdo statistikasi</h2>
-          <button type="button" id="btnRefreshAdminStats" class="icon-pill-btn">↻ Yangilash</button>
-        </div>
         <div class="stats-grid" id="adminStatsGrid"></div>
-      </section>
 
-      <!-- Admin Tab 4: Mijozlar -->
-      <section id="viewAdminUsers" class="view admin-view">
-        <div class="section-head">
-          <h2>Ro'yxatdan o'tgan mijozlar</h2>
-          <button type="button" id="btnRefreshAdminUsers" class="icon-pill-btn">↻ Yangilash</button>
+        <div class="segmented-tabs" id="adminSubTabs">
+          <button type="button" class="seg-btn active" data-admin-tab="orders">Buyurtmalar</button>
+          <button type="button" class="seg-btn" data-admin-tab="products">Mahsulotlar</button>
+          <button type="button" class="seg-btn" data-admin-tab="users">Mijozlar</button>
         </div>
-        <div id="adminUsersList" class="users-stack"></div>
+
+        <!-- Admin Orders Pane -->
+        <div id="adminPaneOrders" class="admin-pane active">
+          <div class="search-bar">
+            <input type="search" id="adminSearchInput" placeholder="Ism, telefon yoki № raqam bo'yicha qidirish..." />
+            <button type="button" id="btnAdminSearch" class="btn-secondary">Qidirish</button>
+          </div>
+          <div class="filter-chips" id="adminStatusChips"></div>
+          <div id="adminOrdersList" class="orders-stack"></div>
+        </div>
+
+        <!-- Admin Products Pane -->
+        <div id="adminPaneProducts" class="admin-pane">
+          <div id="adminProductsList" class="admin-products-stack"></div>
+        </div>
+
+        <!-- Admin Users Pane -->
+        <div id="adminPaneUsers" class="admin-pane">
+          <div id="adminUsersList" class="users-stack"></div>
+        </div>
       </section>
     </main>
 
-    <!-- Floating Quick Cart Bar (Faqat mijozga, savatchada mahsulot bo'lganda) -->
+    <!-- Floating Quick Cart Bar (shown on Catalog when cart > 0) -->
     <div id="floatingCartBar" class="floating-cart hidden">
       <div class="floating-cart-info">
         <span id="floatingCartCount" class="fc-count">0 ta</span>
@@ -301,8 +295,8 @@
       <button type="button" id="btnGoCartFromFloat" class="btn-primary btn-sm">Savatcha →</button>
     </div>
 
-    <!-- ==================== FOYDALANUVCHI MENYUSI ==================== -->
-    <nav class="bottom-nav customer-nav" id="customerNav">
+    <!-- Bottom Tab Navigation -->
+    <nav class="bottom-nav" id="bottomNav">
       <button type="button" class="nav-item active" data-tab="catalog">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
           <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
@@ -340,49 +334,17 @@
         </svg>
         <span>Profil</span>
       </button>
-    </nav>
 
-    <!-- ==================== FAQAT ADMIN MENYUSI ==================== -->
-    <nav class="bottom-nav admin-nav hidden" id="adminNav">
-      <button type="button" class="nav-item active" data-admin-tab="orders">
+      <button type="button" class="nav-item hidden" data-tab="admin" id="navAdminTab">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
-          <rect x="9" y="3" width="6" height="4" rx="2"></rect>
-          <path d="M9 14l2 2 4-4"></path>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
         </svg>
-        <span>Buyurtmalar</span>
-      </button>
-
-      <button type="button" class="nav-item" data-admin-tab="products">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-          <line x1="7" y1="7" x2="7.01" y2="7"></line>
-        </svg>
-        <span>Mahsulotlar</span>
-      </button>
-
-      <button type="button" class="nav-item" data-admin-tab="stats">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="20" x2="18" y2="10"></line>
-          <line x1="12" y1="20" x2="12" y2="4"></line>
-          <line x1="6" y1="20" x2="6" y2="14"></line>
-        </svg>
-        <span>Statistika</span>
-      </button>
-
-      <button type="button" class="nav-item" data-admin-tab="users">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-          <circle cx="9" cy="7" r="4"></circle>
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-        </svg>
-        <span>Mijozlar</span>
+        <span>Admin</span>
       </button>
     </nav>
   </div>
 
-  <!-- Product Detail Bottom Sheet (Mijoz uchun) -->
+  <!-- Product Detail Bottom Sheet -->
   <div id="productModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="sheet-card">
       <button type="button" id="btnCloseProductModal" class="sheet-close" aria-label="Yopish">✕</button>
@@ -408,7 +370,7 @@
     </div>
   </div>
 
-  <!-- 21+ Age Verification Gate Modal (Faqat mijoz uchun) -->
+  <!-- 21+ Age Verification Gate Modal -->
   <div id="ageGateModal" class="modal-backdrop age-gate hidden" aria-modal="true" role="dialog">
     <div class="age-card">
       <div class="age-crest">21+</div>
@@ -419,7 +381,7 @@
         <button type="button" id="btnAgeNo" class="btn-secondary full-width">❌ Yo'q</button>
       </div>
       <div id="ageBlockedNotice" class="hidden">
-        <p class="danger-note">Kechirasiz, ushbu do'kon faqat 21 yoshdan oshganlar uchun mo'ljallangan.</p>
+        <p class="danger-note">Kechirasiz, amaldagi qonunchilikka ko'ra ushbu do'kon faqat 21 yoshdan oshganlar uchun mo'ljallangan.</p>
       </div>
     </div>
   </div>
@@ -427,6 +389,6 @@
   <!-- Toast Container -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

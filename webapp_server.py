@@ -72,19 +72,22 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected_hash, received_hash):
-        log.warning("HMAC mismatch: expected=%s, got=%s", expected_hash, received_hash)
+        return None
+
+    try:
+        auth_date = int(pairs.get("auth_date", "0"))
+    except ValueError:
+        return None
+    if auth_date <= 0 or abs(time.time() - auth_date) > INIT_DATA_TTL_SEC:
         return None
 
     raw_user = pairs.get("user")
     if not raw_user:
-        log.warning("No user in init_data")
         return None
     try:
         tg_user = json.loads(raw_user)
         uid = int(tg_user["id"])
-    except (ValueError, KeyError, TypeError) as e:
-        log.warning("Failed parsing tg_user: %s", e)
-        return None
+    except (ValueError, KeyError, TypeError):
         return None
 
     first = str(tg_user.get("first_name", "")).strip()
@@ -115,28 +118,45 @@ class WebAppHandler:
         init_data = request.headers.get("X-Telegram-Init-Data", "").strip()
         if init_data:
             tg_user = verify_telegram_init_data(init_data, BOT_TOKEN)
-            if tg_user:
-                self.db.touch_user(tg_user["id"], tg_user["name"])
-                return {
-                    "id": tg_user["id"],
-                    "name": tg_user["name"],
-                    "is_admin": tg_user["id"] in ADMIN_IDS,
-                    "source": "telegram",
-                }
-            log.warning("init_data mavjud, ammo tasdiqlanmadi.")
+            if not tg_user:
+                raise web.HTTPUnauthorized(
+                    text=json.dumps({"ok": False, "error": "Telegram sessiyasi yaroqsiz yoki eskirgan.", "code": "invalid_init_data"}),
+                    content_type="application/json",
+                )
+            self.db.touch_user(tg_user["id"], tg_user["name"])
+            return {
+                "id": tg_user["id"],
+                "name": tg_user["name"],
+                "is_admin": tg_user["id"] in ADMIN_IDS,
+                "source": "telegram",
+            }
 
-        # Agar init_data bo'lmasa yoki oddiy brauzer orqali ochilsa:
-        # Xavfsiz mehmon mijoz profili yaratiladi (Admin huquqi BERILMAYDI!)
-        client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For") or request.remote or "guest"
-        guest_id = (abs(hash(client_ip)) % 800_000_000) + 100_000_000
-        default_name = "Mijoz"
-        self.db.touch_user(guest_id, default_name)
-        return {
-            "id": guest_id,
-            "name": default_name,
-            "is_admin": False,
-            "source": "guest",
-        }
+        if _is_local_preview_request(request):
+            demo_role = request.headers.get("X-Demo-Role", "customer").strip().lower()
+            if demo_role == "admin" and ADMIN_IDS:
+                uid = sorted(ADMIN_IDS)[0]
+                default_name = "ECO Admin (Demo)"
+            else:
+                uid = 999000111
+                default_name = "Mehmon Mijoz (Demo)"
+            self.db.touch_user(uid, default_name)
+            return {
+                "id": uid,
+                "name": default_name,
+                "is_admin": uid in ADMIN_IDS,
+                "source": "local_demo",
+            }
+
+        raise web.HTTPUnauthorized(
+            text=json.dumps(
+                {
+                    "ok": False,
+                    "error": "Ushbu do'konni faqat Telegram Mini App orqali ochish mumkin.",
+                    "code": "telegram_required",
+                }
+            ),
+            content_type="application/json",
+        )
 
     def _serialize_user(self, auth: dict) -> dict:
         row = self.db.get_user(auth["id"])

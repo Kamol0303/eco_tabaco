@@ -28,16 +28,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-html,
+html {
+  margin: 0;
+  padding: 0;
+  overflow-x: clip;
+  background-color: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   padding: 0;
-  width: 100%;
-  min-height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
   background-color: var(--bg);
   background-image:
     radial-gradient(circle at 12% 0%, rgba(34, 86, 57, 0.28), transparent 45%),
@@ -46,6 +47,14 @@ body {
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
   line-height: 1.45;
+  min-height: 100dvh;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+}
+
+body.modal-open {
+  overflow: hidden;
 }
 
 .hidden {
@@ -56,11 +65,19 @@ body {
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
-  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: clip;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(90px + var(--safe-bottom));
-  touch-action: pan-y;
+  padding-bottom: calc(82px + var(--safe-bottom));
+}
+
+body.admin-only .app-shell {
+  padding-bottom: calc(20px + var(--safe-bottom));
+}
+
+body.admin-only .status-dot {
+  background: var(--gold);
 }
 
 /* Header */
@@ -1131,6 +1148,8 @@ body {
   display: flex;
   gap: 7px;
   overflow-x: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
   padding-bottom: 8px;
   margin-bottom: 10px;
   scrollbar-width: none;
@@ -1359,6 +1378,9 @@ body {
   max-width: 540px;
   max-height: 92vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 24px 24px 0 0;

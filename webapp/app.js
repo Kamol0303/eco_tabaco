@@ -1,4 +1,4 @@
-/* ECO · Telegram Mini App Frontend (Mijoz va Admin alohida) */
+/* ECO · Telegram Mini App Frontend */
 (function () {
   "use strict";
 
@@ -13,8 +13,9 @@
     statuses: {},
     flow: [],
     activeTab: "catalog",
-    activeAdminTab: "orders",
+    demoRole: localStorage.getItem("eco_demo_role") || "customer",
     modalProductId: null,
+    adminTab: "orders",
     adminFilter: "all",
     adminSearch: "",
     adminData: null,
@@ -74,6 +75,8 @@
     );
     if (tg && tg.initData) {
       headers["X-Telegram-Init-Data"] = tg.initData;
+    } else {
+      headers["X-Demo-Role"] = state.demoRole;
     }
     const res = await fetch(path, Object.assign({}, options, { headers }));
     let data = {};
@@ -98,32 +101,39 @@
     return Boolean(tg && tg.initData && typeof tg.requestContact === "function");
   }
 
-  // ---------------- Ko'rinishlar boshqaruvi ----------------
-  function hideAllViews() {
+  // ---------------- Ko'rinishlarni boshqarish ----------------
+  function showView(viewId) {
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+    const target = document.getElementById(viewId);
+    if (target) target.classList.add("active");
   }
 
-  function showCustomerTab(tab) {
-    if (state.user && state.user.is_admin) return;
+  function switchTab(tab) {
+    const isAdmin = Boolean(state.user && state.user.is_admin);
+    if (isAdmin) {
+      tab = "admin";
+    } else if (tab === "admin") {
+      tab = "catalog";
+    }
     state.activeTab = tab;
     if (tab !== "cart") {
       state.orderPlacedSuccess = false;
     }
 
-    document.querySelectorAll("#customerNav .nav-item").forEach((b) => {
+    document.querySelectorAll(".nav-item").forEach((b) => {
       b.classList.toggle("active", b.dataset.tab === tab);
     });
 
-    hideAllViews();
     const mapTabToView = {
       catalog: "viewCatalog",
       cart: "viewCart",
       orders: "viewOrders",
       profile: "viewProfile",
+      admin: "viewAdmin",
     };
-    const target = document.getElementById(mapTabToView[tab] || "viewCatalog");
-    if (target) target.classList.add("active");
+    showView(mapTabToView[tab] || "viewCatalog");
     updateFloatingCartBar();
+    window.scrollTo(0, 0);
 
     if (tab === "cart") {
       renderCart();
@@ -132,42 +142,19 @@
       refreshOrders();
     } else if (tab === "profile") {
       renderProfile();
+    } else if (tab === "admin") {
+      loadAdminOverview();
     }
-    haptic("select");
-  }
-
-  function showAdminTab(tab) {
-    if (!state.user || !state.user.is_admin) return;
-    state.activeAdminTab = tab;
-
-    document.querySelectorAll("#adminNav .nav-item").forEach((b) => {
-      b.classList.toggle("active", b.dataset.adminTab === tab);
-    });
-
-    hideAllViews();
-    const mapTabToView = {
-      orders: "viewAdminOrders",
-      products: "viewAdminProducts",
-      stats: "viewAdminStats",
-      users: "viewAdminUsers",
-    };
-    const target = document.getElementById(mapTabToView[tab] || "viewAdminOrders");
-    if (target) target.classList.add("active");
-
-    loadAdminOverview();
     haptic("select");
   }
 
   function updateFloatingCartBar() {
     const bar = document.getElementById("floatingCartBar");
-    if (state.user && state.user.is_admin) {
-      bar.classList.add("hidden");
-      return;
-    }
     const show =
       state.activeTab === "catalog" &&
       state.cart.total_qty > 0 &&
       state.user &&
+      !state.user.is_admin &&
       state.user.age_ok;
     bar.classList.toggle("hidden", !show);
     if (show) {
@@ -178,10 +165,6 @@
 
   function updateCartBadges() {
     const badge = document.getElementById("navCartBadge");
-    if (!state.user || state.user.is_admin) {
-      badge.classList.add("hidden");
-      return;
-    }
     if (state.cart.total_qty > 0) {
       badge.textContent = String(state.cart.total_qty);
       badge.classList.remove("hidden");
@@ -194,29 +177,27 @@
   function renderHeader() {
     const u = state.user;
     if (!u) return;
+    const isAdmin = Boolean(u.is_admin);
+    document.body.classList.toggle("admin-only", isAdmin);
+    document.getElementById("bottomNav").classList.toggle("hidden", isAdmin);
+    document.getElementById("navAdminTab").classList.toggle("hidden", !isAdmin);
+    document.getElementById("userBadgeName").textContent = isAdmin
+      ? `Admin · ${u.name || "Panel"}`
+      : u.name || "Foydalanuvchi";
 
-    const sub = document.getElementById("brandSubTitle");
-    const nameEl = document.getElementById("userBadgeName");
-
-    if (u.is_admin) {
-      sub.textContent = "ADMIN BOSHQARUV PANELI";
-      nameEl.textContent = `🛡 Admin: ${u.name}`;
-      document.getElementById("customerNav").classList.add("hidden");
-      document.getElementById("adminNav").classList.remove("hidden");
-      document.getElementById("floatingCartBar").classList.add("hidden");
-      document.getElementById("ageGateModal").classList.add("hidden");
+    const demoWrap = document.getElementById("demoSwitcher");
+    if (u.auth_source === "local_demo") {
+      demoWrap.classList.remove("hidden");
+      demoWrap.querySelectorAll(".demo-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.role === state.demoRole);
+      });
     } else {
-      sub.textContent = "INNOVATION TOBACCO";
-      nameEl.textContent = u.name || "Mijoz";
-      document.getElementById("adminNav").classList.add("hidden");
-      document.getElementById("customerNav").classList.remove("hidden");
+      demoWrap.classList.add("hidden");
     }
   }
 
-  // ---------------- Mijoz: Katalog ----------------
+  // ---------------- Katalog ----------------
   function renderCatalog() {
-    if (state.user && state.user.is_admin) return;
-
     const grid = document.getElementById("catalogGrid");
     document.getElementById("productCountLabel").textContent = `${state.products.length} turdagi mahsulot`;
 
@@ -293,6 +274,7 @@
     syncProductModal();
     modal.classList.remove("hidden");
     modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
     haptic("select");
   }
 
@@ -310,9 +292,10 @@
     const modal = document.getElementById("productModal");
     modal.classList.add("hidden");
     modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
   }
 
-  // ---------------- Mijoz: Savatcha & Joylashuv ----------------
+  // ---------------- Savatcha & Joylashuv ----------------
   function renderCart() {
     const successCard = document.getElementById("orderSuccessCard");
     const emptyCard = document.getElementById("cartEmpty");
@@ -400,11 +383,15 @@
         center: [state.lat, state.lon],
         zoom: 13,
         zoomControl: true,
+        scrollWheelZoom: false,
         attributionControl: false,
       });
 
       const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
+      });
+      tiles.on("tileerror", () => {
+        // Offline bo'lsa ham marker va kiritish maydoni ishlaydi
       });
       tiles.addTo(state.map);
 
@@ -537,7 +524,7 @@
     }
   }
 
-  // ---------------- Mijoz: Buyurtmalarim ----------------
+  // ---------------- Buyurtmalarim ----------------
   async function refreshOrders() {
     try {
       const data = await api("/api/orders");
@@ -615,7 +602,7 @@
       .join("");
   }
 
-  // ---------------- Mijoz: Profil ----------------
+  // ---------------- Profil ----------------
   function renderProfile() {
     const u = state.user;
     if (!u) return;
@@ -634,7 +621,7 @@
       : "Buyurtma berish uchun telefon raqamingizni saqlang.";
   }
 
-  // ---------------- FAQAT ADMIN: Boshqaruv Paneli ----------------
+  // ---------------- Admin Panel ----------------
   async function loadAdminOverview() {
     if (!state.user || !state.user.is_admin) return;
     try {
@@ -655,7 +642,6 @@
     if (!d) return;
 
     const s = d.stats;
-    // 1. Statistika qismi
     document.getElementById("adminStatsGrid").innerHTML = `
       <div class="stat-card">
         <div class="stat-label">📅 Bugun</div>
@@ -673,13 +659,12 @@
         <div class="stat-sub">${s.total[0]} ta buyurtma</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">👥 Ro'yxatdan o'tganlar</div>
+        <div class="stat-label">👥 Mijozlar</div>
         <div class="stat-val">${s.users} ta</div>
         <div class="stat-sub">Yangi: ${s.by_status.new || 0} ta</div>
       </div>
     `;
 
-    // 2. Buyurtmalar filtri
     const chips = [
       `<button type="button" class="chip-btn ${state.adminFilter === "all" ? "active" : ""}" data-status="all">Hammasi</button>`,
       ...Object.keys(state.statuses).map((code) => {
@@ -690,7 +675,6 @@
     ];
     document.getElementById("adminStatusChips").innerHTML = chips.join("");
 
-    // 3. Buyurtmalar ro'yxati
     const ordersList = document.getElementById("adminOrdersList");
     if (!d.orders.length) {
       ordersList.innerHTML = `<div class="empty-card"><p>Buyurtmalar topilmadi.</p></div>`;
@@ -746,7 +730,6 @@
         .join("");
     }
 
-    // 4. Mahsulotlar va narxlar
     document.getElementById("adminProductsList").innerHTML = d.products
       .map(
         (p) => `
@@ -769,7 +752,6 @@
       )
       .join("");
 
-    // 5. Mijozlar ro'yxati
     document.getElementById("adminUsersList").innerHTML = d.users.length
       ? d.users
           .map(
@@ -792,11 +774,13 @@
     const gate = document.getElementById("ageGateModal");
     if (!state.user || state.user.is_admin || state.user.age_ok) {
       gate.classList.add("hidden");
+      document.body.classList.remove("modal-open");
       return;
     }
     document.getElementById("ageGateActions").classList.remove("hidden");
     document.getElementById("ageBlockedNotice").classList.add("hidden");
     gate.classList.remove("hidden");
+    document.body.classList.add("modal-open");
   }
 
   // ---------------- Bootstrap ----------------
@@ -811,24 +795,28 @@
       state.flow = data.flow;
 
       renderHeader();
+      syncAgeGate();
 
       if (state.user.is_admin) {
-        // ADMIN: Faqat admin panelini ochamiz
-        showAdminTab(state.activeAdminTab || "orders");
+        updateFloatingCartBar();
+        switchTab("admin");
       } else {
-        // MIJOZ: Faqat mijoz do'konini ochamiz
         renderCatalog();
         updateCartBadges();
         renderOrders();
         renderProfile();
-        syncAgeGate();
-        showCustomerTab(state.activeTab || "catalog");
+        if (state.activeTab === "admin") {
+          switchTab("catalog");
+        } else {
+          switchTab(state.activeTab);
+        }
       }
     } catch (e) {
       if (e.status === 401) {
+        document.body.classList.remove("admin-only");
+        document.getElementById("bottomNav").classList.add("hidden");
         document.getElementById("blockedMessage").textContent = e.message;
-        hideAllViews();
-        document.getElementById("viewBlocked").classList.add("active");
+        showView("viewBlocked");
       } else {
         showToast(e.message, true);
       }
@@ -837,30 +825,37 @@
 
   // ---------------- Hodisalar ----------------
   function bindEvents() {
-    // Mijoz pastki menyusi
-    document.getElementById("customerNav").addEventListener("click", (e) => {
+    // Bottom nav
+    document.getElementById("bottomNav").addEventListener("click", (e) => {
       const btn = e.target.closest(".nav-item");
-      if (btn && btn.dataset.tab) showCustomerTab(btn.dataset.tab);
+      if (btn && btn.dataset.tab) switchTab(btn.dataset.tab);
     });
 
-    // Admin pastki menyusi
-    document.getElementById("adminNav").addEventListener("click", (e) => {
-      const btn = e.target.closest(".nav-item");
-      if (btn && btn.dataset.adminTab) showAdminTab(btn.dataset.adminTab);
-    });
-
-    // Tezkor yo'naltirish tugmalari
+    // Quick tab redirect buttons
     document.addEventListener("click", (e) => {
       const goBtn = e.target.closest("[data-go-tab]");
       if (goBtn) {
         state.orderPlacedSuccess = false;
-        showCustomerTab(goBtn.dataset.goTab);
+        switchTab(goBtn.dataset.goTab);
       }
     });
 
-    document.getElementById("btnGoCartFromFloat").addEventListener("click", () => showCustomerTab("cart"));
+    document.getElementById("userBadge").addEventListener("click", () => {
+      if (state.user && state.user.is_admin) return;
+      switchTab("profile");
+    });
+    document.getElementById("btnGoCartFromFloat").addEventListener("click", () => switchTab("cart"));
 
-    // Katalog amallari (Mijoz)
+    // Demo Role Switcher (faqat localhost)
+    document.getElementById("demoSwitcher").addEventListener("click", (e) => {
+      const btn = e.target.closest(".demo-btn");
+      if (!btn) return;
+      state.demoRole = btn.dataset.role;
+      localStorage.setItem("eco_demo_role", state.demoRole);
+      bootstrap();
+    });
+
+    // Catalog actions
     document.getElementById("catalogGrid").addEventListener("click", (e) => {
       const target = e.target.closest("[data-action]");
       if (!target) return;
@@ -875,7 +870,7 @@
       }
     });
 
-    // Mahsulot batafsil modali
+    // Product detail modal
     document.getElementById("btnCloseProductModal").addEventListener("click", closeProductModal);
     document.getElementById("productModal").addEventListener("click", (e) => {
       if (e.target.id === "productModal") closeProductModal();
@@ -893,11 +888,11 @@
         await updateCartQty(pid, 1);
       } else {
         closeProductModal();
-        showCustomerTab("cart");
+        switchTab("cart");
       }
     });
 
-    // Yosh tasdiqlash
+    // Age gate
     document.getElementById("btnAgeYes").addEventListener("click", async () => {
       try {
         const data = await api("/api/age-confirm", { method: "POST", body: "{}" });
@@ -914,7 +909,7 @@
       document.getElementById("ageBlockedNotice").classList.remove("hidden");
     });
 
-    // Savatcha amallari
+    // Cart item actions
     document.getElementById("cartItemsList").addEventListener("click", (e) => {
       const btn = e.target.closest("[data-cart-act]");
       if (!btn) return;
@@ -939,7 +934,7 @@
       }
     });
 
-    // Buyurtma berish & joylashuv
+    // Checkout Registration & Location
     document.getElementById("btnSaveReg").addEventListener("click", () => {
       const name = document.getElementById("regNameInput").value.trim();
       const phone = document.getElementById("regPhoneInput").value.trim();
@@ -956,7 +951,7 @@
       if (!Number.isNaN(lat) && !Number.isNaN(lon)) setCoordinates(lat, lon, true);
     });
     document.getElementById("lonInput").addEventListener("change", () => {
-      const lat = parseFloat(document.getElementById("lonInput").value);
+      const lat = parseFloat(document.getElementById("latInput").value);
       const lon = parseFloat(document.getElementById("lonInput").value);
       if (!Number.isNaN(lat) && !Number.isNaN(lon)) setCoordinates(lat, lon, true);
     });
@@ -964,7 +959,7 @@
     document.getElementById("btnPlaceOrder").addEventListener("click", placeOrder);
     document.getElementById("btnRefreshOrders").addEventListener("click", refreshOrders);
 
-    // Profil saqlash
+    // Profile Save
     document.getElementById("btnSaveProfile").addEventListener("click", () => {
       const name = document.getElementById("profNameInput").value.trim();
       const phone = document.getElementById("profPhoneInput").value.trim();
@@ -974,11 +969,17 @@
       requestTelegramContact("profPhoneInput", "profNameInput");
     });
 
-    // Admin yangilash tugmalari
-    document.getElementById("btnRefreshAdminOrders").addEventListener("click", loadAdminOverview);
-    document.getElementById("btnRefreshAdminProducts").addEventListener("click", loadAdminOverview);
-    document.getElementById("btnRefreshAdminStats").addEventListener("click", loadAdminOverview);
-    document.getElementById("btnRefreshAdminUsers").addEventListener("click", loadAdminOverview);
+    // Admin actions
+    document.getElementById("btnRefreshAdmin").addEventListener("click", loadAdminOverview);
+    document.getElementById("adminSubTabs").addEventListener("click", (e) => {
+      const btn = e.target.closest(".seg-btn");
+      if (!btn) return;
+      state.adminTab = btn.dataset.adminTab;
+      document.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      document.getElementById("adminPaneOrders").classList.toggle("active", state.adminTab === "orders");
+      document.getElementById("adminPaneProducts").classList.toggle("active", state.adminTab === "products");
+      document.getElementById("adminPaneUsers").classList.toggle("active", state.adminTab === "users");
+    });
 
     document.getElementById("btnAdminSearch").addEventListener("click", () => {
       state.adminSearch = document.getElementById("adminSearchInput").value.trim();
@@ -1023,7 +1024,9 @@
       if (toggleBtn) {
         const pid = Number(toggleBtn.dataset.togglePid);
         try {
-          await api(`/api/admin/products/${pid}/toggle`, { method: "POST", body: "{}" });
+          const res = await api(`/api/admin/products/${pid}/toggle`, { method: "POST", body: "{}" });
+          state.products = res.products.filter((p) => p.active);
+          renderCatalog();
           showToast("Mahsulot holati o'zgartirildi ✅");
           await loadAdminOverview();
         } catch (err) {
@@ -1038,10 +1041,12 @@
         const input = document.getElementById(`priceInput-${pid}`);
         const price = Number(input.value);
         try {
-          await api(`/api/admin/products/${pid}/price`, {
+          const res = await api(`/api/admin/products/${pid}/price`, {
             method: "POST",
             body: JSON.stringify({ price }),
           });
+          state.products = res.products.filter((p) => p.active);
+          renderCatalog();
           showToast("Narx saqlandi ✅");
           await loadAdminOverview();
         } catch (err) {
@@ -1056,14 +1061,17 @@
     try {
       tg.ready();
       tg.expand();
-      if (typeof tg.disableVerticalSwipes === "function") {
-        tg.disableVerticalSwipes();
-      }
-      if (typeof tg.enableClosingConfirmation === "function") {
-        tg.enableClosingConfirmation();
-      }
+      if (typeof tg.disableVerticalSwipes === "function") tg.disableVerticalSwipes();
       if (typeof tg.setHeaderColor === "function") tg.setHeaderColor("#0b0e0c");
       if (typeof tg.setBackgroundColor === "function") tg.setBackgroundColor("#0b0e0c");
+      if (typeof tg.onEvent === "function") {
+        tg.onEvent("viewportChanged", () => {
+          try {
+            if (typeof tg.disableVerticalSwipes === "function") tg.disableVerticalSwipes();
+            if (state.map) state.map.invalidateSize();
+          } catch (_) {}
+        });
+      }
     } catch (_) {}
   }
 

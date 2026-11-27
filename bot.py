@@ -1,11 +1,12 @@
 """ECO buyurtma boti (aiogram 3). Ishga tushirish: python bot.py"""
 import asyncio
 import html
-import json
 import logging
-import os
+import re
+import socket
 from datetime import datetime
 
+from aiohttp import web
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -24,15 +25,13 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
+    MenuButtonDefault,
     MenuButtonWebApp,
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
     WebAppInfo,
 )
-
-from aiohttp import web
-from aiogram.types import MenuButtonDefault
 
 from config import (
     ADMIN_IDS,
@@ -181,89 +180,27 @@ async def safe_edit_markup(msg: Message, kb: InlineKeyboardMarkup) -> None:
             raise
 
 
-WEBAPP_URL = os.getenv("WEBAPP_URL") or "https://kamol0303.github.io/eco_tabaco/"
-
-
-# ====================== Klaviaturalar va Bildirishnomalar ======================
+# ====================== Klaviaturalar ======================
 def has_https_webapp() -> bool:
-    return bool(WEBAPP_URL and WEBAPP_URL.startswith("https://"))
+    return WEBAPP_URL.startswith("https://")
 
 
-async def send_order_status_notification(bot: Bot, db: Database, uid: int, oid: int, code: str) -> None:
-    order = db.get_order(oid)
-    items = db.order_items(oid)
-    items_summary = ", ".join(f"{it['name']} x{it['qty']}" for it in items) if items else ""
-    total_str = money(order["total"]) if order else ""
-
-    messages = {
-        "accepted": (
-            f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            + (f"🛍 Mahsulotlar: <i>{esc(items_summary)}</i>\n" if items_summary else "")
-            + (f"💰 Jami summa: <b>{total_str} so'm</b>\n\n" if total_str else "\n")
-            + "Tez orada buyurtmangiz tayyorlashga topshiriladi."
-        ),
-        "preparing": (
-            f"👨‍🍳 <b>Buyurtmangiz tayyorlanmoqda!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            + (f"🛍 Mahsulotlar: <i>{esc(items_summary)}</i>\n\n" if items_summary else "\n")
-            + "Mahsulotlaringiz jamlanib, qadoqlanmoqda."
-        ),
-        "delivering": (
-            f"🚚 <b>Buyurtmangiz yetkazilmoqda!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            + (f"💰 To'lov summasi: <b>{total_str} so'm</b>\n\n" if total_str else "\n")
-            + "Kuryerimiz buyurtmangizni yetkazish uchun yo'lga chiqdi. Iltimos, telefoningizni aloqada saqlang!"
-        ),
-        "done": (
-            f"🎉 <b>Buyurtmangiz yetkazildi va yakunlandi!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n\n"
-            + "ECO mahsulotlarini tanlaganingiz uchun tashakkur! Xaridingiz maroqli bo'lsin."
-        ),
-        "cancelled": (
-            f"❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n\n"
-            + "Agar savollaringiz bo'lsa, ma'muriyat bilan bog'lanishingiz mumkin."
-        ),
-    }
-
-    text = messages.get(code)
-    if not text:
-        return
-
-    inline_kb = None
+def main_menu(admin: bool = False) -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
     if has_https_webapp():
-        inline_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
-            ]
+        return ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="🌐 Mini App (Do'kon)", web_app=WebAppInfo(url=WEBAPP_URL))]],
+            resize_keyboard=True,
         )
-
-    try:
-        await bot.send_message(uid, text, reply_markup=inline_kb)
-        log.info("Foydalanuvchiga (%s) buyurtma №%s holati (%s) xabari yuborildi", uid, oid, code)
-    except Exception as e:
-        log.warning("Foydalanuvchiga (%s) holat xabari yuborilmadi: %s", uid, e)
-def main_menu(admin: bool = False) -> ReplyKeyboardMarkup:
-    rows = [
-        [KeyboardButton(text="🛍 Do'konni ochish (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))],
-        [KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)],
-        [KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE)],
-    ]
-    if admin:
-        rows.append([KeyboardButton(text=BTN_ADMIN)])
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+    return ReplyKeyboardRemove()
 
 
-def admin_menu() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=A_NEW), KeyboardButton(text=A_ORDERS)],
-            [KeyboardButton(text=A_STATS), KeyboardButton(text=A_USERS)],
-            [KeyboardButton(text=A_PRODUCTS), KeyboardButton(text=A_BACK)],
-        ],
-        resize_keyboard=True,
-    )
+def admin_menu() -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
+    if has_https_webapp():
+        return ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="🌐 Mini App (Admin panel)", web_app=WebAppInfo(url=WEBAPP_URL))]],
+            resize_keyboard=True,
+        )
+    return ReplyKeyboardRemove()
 
 
 def phone_kb() -> ReplyKeyboardMarkup:
@@ -438,11 +375,16 @@ class RegisteredOnly(BaseMiddleware):
     async def __call__(self, handler, event, data):
         u = data.get("event_from_user")
         if u and not db.is_registered(u.id):
-            text = "Avval ro'yxatdan o'ting: /start buyrug'ini bosing."
             if isinstance(event, CallbackQuery):
-                await event.answer(text, show_alert=True)
+                await event.answer("Avval ro'yxatdan o'ting: /start buyrug'ini bosing.", show_alert=True)
             elif isinstance(event, Message):
-                await event.answer(text)
+                if has_https_webapp():
+                    await event.answer(
+                        "🛍 Buyurtma berish uchun pastdagi Mini App tugmasi orqali do'konni oching:",
+                        reply_markup=main_menu(False),
+                    )
+                else:
+                    await event.answer("Avval ro'yxatdan o'ting: /start buyrug'ini bosing.")
             return None
         return await handler(event, data)
 
@@ -466,11 +408,41 @@ async def cmd_start(m: Message, state: FSMContext):
     await state.clear()
     u = m.from_user
     db.touch_user(u.id, u.full_name)
+    if is_admin(u.id):
+        await m.answer(
+            f"🔧 <b>Admin panel</b>\nAssalomu alaykum, <b>{esc(u.full_name)}</b>! Buyurtmalar, mahsulotlar va mijozlarni boshqarish uchun quyidagi tugma orqali Admin panelni oching.",
+            reply_markup=admin_menu(),
+        )
+        if has_https_webapp():
+            await m.answer(
+                "📊 Mini App Admin panelini ochish:",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🔧 Admin panelni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+                    ]
+                ),
+            )
+        return
     row = db.get_user(u.id)
+    if has_https_webapp():
+        greeting_name = row["name"] if row else u.full_name
+        await m.answer(
+            f"Assalomu alaykum, <b>{esc(greeting_name)}</b>! 👋\n<b>ECO</b> do'koniga xush kelibsiz. Buyurtma berish uchun pastdagi tugma orqali do'konni oching.",
+            reply_markup=main_menu(False),
+        )
+        await m.answer(
+            "🛍 <b>ECO Mini App</b> orqali mahsulotlarni tanlab buyurtma bering:",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🛍 Mini App do'konini ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+                ]
+            ),
+        )
+        return
     if row["phone"]:
         await m.answer(
-            f"Qaytganingiz bilan, <b>{esc(row['name'])}</b>! 👋\nKerakli bo'limni tanlang.",
-            reply_markup=main_menu(is_admin(u.id)),
+            f"Qaytganingiz bilan, <b>{esc(row['name'])}</b>! 👋",
+            reply_markup=main_menu(False),
         )
         return
     await m.answer(
@@ -499,7 +471,7 @@ async def age_yes(cb: CallbackQuery):
 
 @reg.callback_query(F.data == "age_no")
 async def age_no(cb: CallbackQuery):
-    await safe_edit_text(cb.message, "Kechirasiz, bu bot faqat 21 yoshdan oshganlar uchun.")
+    await safe_edit_text(cb.message, "Kechirasiz, qonunchilikka muvofiq bu bot faqat 21 yoshdan oshganlar uchun.")
     await cb.answer()
 
 
@@ -570,19 +542,54 @@ def products_view() -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+async def send_order_status_notification(bot: Bot, uid: int, oid: int, code: str) -> None:
+    """Admin buyurtma holatini o'zgartirganda xaridorga tarkibi, summasi va do'kon tugmasi bilan chiroyli xabar yuboradi."""
+    status_text = USER_STATUS_MSG.get(code, f"Buyurtmangiz holati: {STATUSES.get(code, code)}")
+    o = db.get_order(oid)
+    if not o:
+        return
+    items = db.order_items(oid)
+    item_lines = "\n".join(
+        f"• {esc(it['product_name'])} × {it['qty']} = {money(it['price'] * it['qty'])} so'm" for it in items
+    )
+    text = (
+        f"{status_text.format(oid=oid)}\n\n"
+        f"🧾 <b>Buyurtma tarkibi:</b>\n{item_lines}\n\n"
+        f"💰 <b>Jami summa:</b> {money(o['total'])} so'm"
+    )
+    kb = None
+    if has_https_webapp():
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🛍 Do'konda ko'rish", web_app=WebAppInfo(url=WEBAPP_URL))]]
+        )
+    try:
+        await bot.send_message(uid, text, reply_markup=kb)
+    except Exception:
+        log.exception("Foydalanuvchiga (%s) holat xabari yuborilmadi", uid)
+
+
 @admin.message(Command("admin"))
 @admin.message(F.text == BTN_ADMIN)
 async def a_panel(m: Message):
     await m.answer(
-        "🔧 <b>Admin panel</b>\nKerakli bo'limni tanlang.\n"
+        "🔧 <b>Admin panel</b>\nPastdagi tugma orqali Admin panelni oching.\n"
         "Qidirish: <code>/qidirish ism yoki telefon yoki raqam</code>",
         reply_markup=admin_menu(),
     )
+    if has_https_webapp():
+        await m.answer(
+            "📊 Mini App Admin panelini ochish:",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🔧 Admin panelni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+                ]
+            ),
+        )
 
 
 @admin.message(F.text == A_BACK)
 async def a_back(m: Message):
-    await m.answer("Asosiy menyu.", reply_markup=main_menu(True))
+    await m.answer("🔧 <b>Admin panel</b>", reply_markup=admin_menu())
 
 
 @admin.message(F.text == A_NEW)
@@ -666,14 +673,10 @@ async def a_set_status(cb: CallbackQuery, bot: Bot):
         return
     db.set_status(oid, code)
     log.info("Buyurtma №%s holati: %s -> %s (admin %s)", oid, o["status"], code, cb.from_user.id)
-    await send_order_status_notification(bot, db, o["user_id"], oid, code)
     o = db.get_order(oid)
     await cb.answer(f"Holat: {STATUSES[code]}")
     await safe_edit_text(cb.message, order_text(o, db.order_items(oid)), admin_order_kb(o))
-    try:
-        await bot.send_message(o["user_id"], USER_STATUS_MSG[code].format(oid=oid))
-    except Exception:
-        log.exception("Foydalanuvchiga (%s) holat xabari yuborilmadi", o["user_id"])
+    await send_order_status_notification(bot, o["user_id"], oid, code)
 
 
 @admin.message(F.text == A_STATS)
@@ -739,6 +742,11 @@ async def a_price(m: Message, command: CommandObject):
         await m.answer("❌ Bunday mahsulot topilmadi. Kalitlar: mint, classic, premium")
 
 
+@admin.message()
+async def admin_fallback(m: Message):
+    await m.answer("🔧 <b>Admin panel</b>\nPastdagi tugma orqali Admin panelni oching.", reply_markup=admin_menu())
+
+
 # ---------------------- Foydalanuvchi menyusi ----------------------
 @user.message(F.text == BTN_CATALOG)
 async def m_catalog(m: Message, bot: Bot):
@@ -788,7 +796,10 @@ async def m_cart(m: Message):
 @user.callback_query(F.data == "cart")
 async def cb_cart(cb: CallbackQuery):
     text, kb = render_cart(cb.from_user.id)
-    await safe_edit_text(cb.message, text, kb)
+    if cb.message.text is None:
+        await cb.message.answer(text, reply_markup=kb)
+    else:
+        await safe_edit_text(cb.message, text, kb)
     await cb.answer()
 
 
@@ -966,101 +977,12 @@ async def stray_location(m: Message):
     await m.answer("Buyurtma berish uchun avval savatchadan «Buyurtma berish» tugmasini bosing.")
 
 
-@user.message(F.web_app_data)
-async def handle_mini_app_order(m: Message, bot: Bot):
-    try:
-        data = json.loads(m.web_app_data.data)
-        c_name = str(data.get("customer_name") or m.from_user.full_name)
-        c_phone = str(data.get("customer_phone") or "")
-        addr = str(data.get("delivery_address") or "Ko'rsatilmadi")
-        notes = str(data.get("notes") or "")
-        raw_items = data.get("items") or []
-        total = int(data.get("total") or 0)
-        coords = data.get("coords") or {}
-        lat = coords.get("lat")
-        lon = coords.get("lon")
-
-        # items: list of (product_name, price, qty)
-        items_list = []
-        for it in raw_items:
-            pname = it.get("name") or "ECO Mahsulot"
-            pr = int(it.get("price") or 225000)
-            qty = int(it.get("qty") or 1)
-            items_list.append((pname, pr, qty))
-
-        if not items_list:
-            await m.answer("Savatchangiz bo'sh. Iltimos, mahsulot miqdorini tanlang.")
-            return
-
-        if total <= 0:
-            total = sum(p * q for _, p, q in items_list)
-
-        # Foydalanuvchini bazada saqlash/yangilash
-        db.touch_user(m.from_user.id, c_name)
-        if c_phone:
-            db.register(m.from_user.id, c_name, c_phone)
-
-        # Buyurtma yaratish
-        oid = db.create_direct_order(
-            uid=m.from_user.id,
-            user_name=c_name,
-            phone=c_phone,
-            total=total,
-            items=items_list,
-            lat=lat,
-            lon=lon,
-        )
-
-        # Mijozga tasdiq
-        items_summary = "\n".join([f"• <b>{esc(name)}</b> × {qty} ta ({money(price * qty)} so'm)" for name, price, qty in items_list])
-        await m.answer(
-            f"🎉 <b>Rahmat! Buyurtmangiz qabul qilindi!</b>\n\n"
-            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
-            f"🛍 <b>Tarkibi:</b>\n{items_summary}\n\n"
-            f"💰 <b>Jami summa:</b> <b>{money(total)} so'm</b>\n"
-            f"📍 <b>Manzil:</b> {esc(addr)}\n"
-            f"{f'📝 <b>Izoh:</b> {esc(notes)}\n' if notes else ''}\n"
-            f"Tez orada operatorimiz siz bilan bog'lanadi va yetkazib berish boshlanadi!",
-            reply_markup=main_menu(is_admin(m.from_user.id)),
-        )
-
-        # Adminga bildirishnoma
-        admin_kb_rows = [
-            [btn("✅ Qabul qilish", f"st:{oid}:accepted"), btn("🚚 Yetkazilmoqda", f"st:{oid}:delivering")],
-            [btn("🎉 Yakunlash", f"st:{oid}:done"), btn("❌ Bekor qilish", f"st:{oid}:cancelled")],
-        ]
-        if lat and lon:
-            admin_kb_rows.append([
-                InlineKeyboardButton(text="🗺 Google Maps", url=f"https://www.google.com/maps?q={lat},{lon}")
-            ])
-        admin_kb = InlineKeyboardMarkup(inline_keyboard=admin_kb_rows)
-
-        admin_text = (
-            f"🔔 <b>YANGI BUYURTMA №{oid} (Mini App orqali)</b>\n\n"
-            f"👤 <b>Mijoz:</b> {esc(c_name)}\n"
-            f"📱 <b>Telefon:</b> <code>{esc(c_phone)}</code>\n"
-            f"📍 <b>Manzil:</b> {esc(addr)}\n"
-            f"{f'📝 <b>Izoh:</b> {esc(notes)}\n' if notes else ''}\n"
-            f"🛍 <b>Mahsulotlar:</b>\n{items_summary}\n\n"
-            f"💰 <b>Jami:</b> <b>{money(total)} so'm</b>"
-        )
-
-        for aid in ADMIN_IDS:
-            try:
-                await bot.send_message(aid, admin_text, reply_markup=admin_kb)
-                if lat and lon:
-                    await bot.send_location(aid, latitude=lat, longitude=lon)
-            except Exception:
-                log.exception("Adminga (%s) buyurtma yuborishda xatolik", aid)
-
-    except Exception:
-        log.exception("Mini App ma'lumotlarini qabul qilishda xatolik")
-        await m.answer("Buyurtmani qayta ishlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.")
-
-
 @user.message(F.text)
 async def fallback(m: Message):
-    await m.answer("Iltimos, pastdagi menyudan foydalaning.", reply_markup=main_menu(is_admin(m.from_user.id)))
+    await m.answer(
+        "🛍 Buyurtma berish uchun pastdagi tugma orqali Mini App do'konini oching.",
+        reply_markup=main_menu(False),
+    )
 
 
 # ====================== Ishga tushirish ======================
@@ -1077,8 +999,54 @@ async def backup_loop() -> None:
         await asyncio.sleep(24 * 3600)
 
 
+async def _drain_stream(stream: asyncio.StreamReader | None) -> None:
+    if not stream:
+        return
+    try:
+        while await stream.readline():
+            pass
+    except Exception:
+        pass
+
+
+async def start_tunnel_if_needed() -> tuple[asyncio.subprocess.Process | None, asyncio.Task | None, str]:
+    global WEBAPP_URL
+    cf_bin = BASE_DIR / "cloudflared.exe"
+    if WEBAPP_URL and WEBAPP_URL.startswith("https://") and "trycloudflare.com" not in WEBAPP_URL:
+        return None, None, WEBAPP_URL
+    if not cf_bin.exists():
+        return None, None, WEBAPP_URL or ""
+    log.info("Avtomatik Cloudflare HTTPS tunneli ishga tushirilmoqda...")
+    proc = await asyncio.create_subprocess_exec(
+        str(cf_bin), "tunnel", "--url", f"http://127.0.0.1:{WEBAPP_PORT}",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    url = ""
+    start_t = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_t < 15:
+        try:
+            line = await asyncio.wait_for(proc.stderr.readline(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+        if not line:
+            break
+        text = line.decode("utf-8", errors="ignore")
+        m = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", text)
+        if m:
+            url = m.group(0)
+            break
+    drain_task = asyncio.create_task(_drain_stream(proc.stderr))
+    if url:
+        WEBAPP_URL = url
+        log.info("Cloudflare HTTPS tunneli muvaffaqiyatli ulandi: %s", url)
+    return proc, drain_task, url
+
+
 async def main() -> None:
+    tunnel_proc, tunnel_drain_task, active_url = await start_tunnel_if_needed()
     session = AiohttpSession(timeout=60.0)
+    session._connector_init["family"] = socket.AF_INET
     bot = Bot(BOT_TOKEN, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
 
@@ -1090,34 +1058,22 @@ async def main() -> None:
     dp.include_router(admin)
     dp.include_router(user)
 
-    await bot.set_my_commands([BotCommand(command="start", description="Botni ishga tushirish")])
-    for aid in ADMIN_IDS:
-        try:
-            await bot.set_my_commands(
-                [
-                    BotCommand(command="start", description="Botni ishga tushirish"),
-                    BotCommand(command="admin", description="Admin panel"),
-                    BotCommand(command="narx", description="Narxni o'zgartirish"),
-                    BotCommand(command="qidirish", description="Buyurtmani qidirish"),
-                ],
-                scope=BotCommandScopeChat(chat_id=aid),
-            )
-        except Exception:
-            log.warning("Admin (%s) uchun buyruqlar o'rnatilmadi (admin hali /start bosmagan bo'lishi mumkin)", aid)
+    webapp = create_webapp(
+        db,
+        notify_admins_cb=lambda oid: notify_admins(bot, oid),
+        notify_user_status_cb=lambda uid, oid, code: send_order_status_notification(bot, uid, oid, code),
+    )
+    web_runner = web.AppRunner(webapp)
+    await web_runner.setup()
+    web_site = web.TCPSite(web_runner, WEBAPP_HOST, WEBAPP_PORT)
+    await web_site.start()
+    log.info("Mini App server ishga tushdi: http://%s:%s", WEBAPP_HOST, WEBAPP_PORT)
 
-    # Mini App Menu tugmasi
     try:
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(text="🛍 Do'kon", web_app=WebAppInfo(url=WEBAPP_URL))
-        )
+        await bot.set_my_commands([BotCommand(command="start", description="Botni ishga tushirish")])
     except Exception:
-        pass
+        log.warning("Umumiy bot buyruqlari o'rnatilmadi")
 
-    backup_task = asyncio.create_task(backup_loop())
-    me = await bot.get_me()
-    log.info("Bot ishga tushdi: @%s", me.username)
-
-    # Mini App Web Server (aiohttp)
     if has_https_webapp():
         try:
             await bot.set_chat_menu_button(
@@ -1132,41 +1088,42 @@ async def main() -> None:
         except Exception:
             pass
 
-    async def notify_user_status(uid: int, oid: int, code: str) -> None:
-        await send_order_status_notification(bot, db, uid, oid, code)
+    for aid in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(
+                [
+                    BotCommand(command="start", description="Admin panelni ochish"),
+                    BotCommand(command="admin", description="Admin panel"),
+                    BotCommand(command="narx", description="Narxni o'zgartirish"),
+                    BotCommand(command="qidirish", description="Buyurtmani qidirish"),
+                ],
+                scope=BotCommandScopeChat(chat_id=aid),
+            )
+            if has_https_webapp():
+                await bot.set_chat_menu_button(
+                    chat_id=aid,
+                    menu_button=MenuButtonWebApp(text="🔧 Admin", web_app=WebAppInfo(url=WEBAPP_URL)),
+                )
+        except Exception:
+            log.warning("Admin (%s) uchun buyruqlar o'rnatilmadi (admin hali /start bosmagan bo'lishi mumkin)", aid)
 
-    webapp = create_webapp(
-        db,
-        notify_admins_cb=lambda oid: notify_admins(bot, oid),
-        notify_user_status_cb=notify_user_status,
-    )
-    web_runner = web.AppRunner(webapp)
-    await web_runner.setup()
-    web_site = web.TCPSite(web_runner, WEBAPP_HOST, WEBAPP_PORT)
-    await web_site.start()
-    log.info("Mini App server ishga tushdi: http://%s:%s", WEBAPP_HOST, WEBAPP_PORT)
-
+    backup_task = asyncio.create_task(backup_loop())
+    me = await bot.get_me()
+    log.info("Bot ishga tushdi: @%s", me.username)
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-    try:
-        while True:
-            try:
-                await dp.start_polling(bot, handle_signals=False)
-                break
-            except Exception as e:
-                if "Conflict" in type(e).__name__ or "conflict" in str(e).lower():
-                    log.warning("Boshqa bot nusxasi to'xtashi kutilmoqda (5 soniya)...")
-                    await asyncio.sleep(5)
-                else:
-                    raise
+        await dp.start_polling(bot)
     finally:
         backup_task.cancel()
-        if web_runner:
-            await web_runner.cleanup()
+        if tunnel_drain_task:
+            tunnel_drain_task.cancel()
+        await web_runner.cleanup()
         await bot.session.close()
+        if tunnel_proc:
+            try:
+                tunnel_proc.terminate()
+                await tunnel_proc.wait()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
