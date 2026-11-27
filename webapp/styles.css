@@ -1082,6 +1082,7 @@ body.admin-only .status-dot {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
   padding: 12px 13px;
+  min-width: 0;
 }
 
 .stat-label {
@@ -1123,6 +1124,7 @@ body.admin-only .status-dot {
   padding: 9px 6px;
   border-radius: 10px;
   cursor: pointer;
+  min-width: 0;
 }
 
 .seg-btn.active {
@@ -1140,23 +1142,25 @@ body.admin-only .status-dot {
 
 .search-bar {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-bottom: 10px;
 }
 
-.filter-chips {
-  display: flex;
-  gap: 7px;
-  overflow-x: auto;
-  touch-action: pan-x pan-y;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
-  scrollbar-width: none;
+.search-bar input {
+  flex: 1;
+  min-width: 0;
 }
 
-.filter-chips::-webkit-scrollbar {
-  display: none;
+.search-bar button {
+  flex-shrink: 0;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 12px;
 }
 
 .chip-btn {
@@ -1166,7 +1170,7 @@ body.admin-only .status-dot {
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
-  padding: 6px 11px;
+  padding: 6px 10px;
   border-radius: 999px;
   white-space: nowrap;
   cursor: pointer;
