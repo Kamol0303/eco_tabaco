@@ -201,6 +201,35 @@ class Database:
             self.conn.execute("ROLLBACK")
             raise
 
+    def create_direct_order(
+        self,
+        uid: int,
+        user_name: str,
+        phone: str,
+        total: int,
+        items: list[tuple[str, int, int]],
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> int:
+        """To'g'ridan-to'g'ri (masalan, Mini App orqali) buyurtma yaratish."""
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = self.conn.execute(
+                "INSERT INTO orders(user_id, user_name, phone, total, lat, lon, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'new', ?)",
+                (uid, user_name, phone, total, lat, lon, now_str()),
+            )
+            oid = cur.lastrowid
+            self.conn.executemany(
+                "INSERT INTO order_items(order_id, product_name, price, qty) VALUES (?, ?, ?, ?)",
+                [(oid, name, price, qty) for name, price, qty in items],
+            )
+            self.conn.execute("COMMIT")
+            return oid
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
     def get_order(self, oid: int):
         return self.conn.execute("SELECT * FROM orders WHERE id=?", (oid,)).fetchone()
 

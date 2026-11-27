@@ -1,6 +1,7 @@
 """ECO buyurtma boti (aiogram 3). Ishga tushirish: python bot.py"""
 import asyncio
 import html
+import json
 import logging
 import os
 from datetime import datetime
@@ -22,9 +23,11 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
+    MenuButtonWebApp,
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
+    WebAppInfo,
 )
 
 from config import ADMIN_IDS, BACKUP_DIR, BASE_DIR, BOT_TOKEN, DB_PATH, DEFAULT_PRICE, LOG_PATH, MAX_QTY
@@ -161,9 +164,13 @@ async def safe_edit_markup(msg: Message, kb: InlineKeyboardMarkup) -> None:
             raise
 
 
+WEBAPP_URL = os.getenv("WEBAPP_URL") or "https://kamol0303.github.io/eco_tabaco/"
+
+
 # ====================== Klaviaturalar ======================
 def main_menu(admin: bool = False) -> ReplyKeyboardMarkup:
     rows = [
+        [KeyboardButton(text="🛍 Do'konni ochish (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))],
         [KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)],
         [KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE)],
     ]
@@ -882,6 +889,98 @@ async def stray_location(m: Message):
     await m.answer("Buyurtma berish uchun avval savatchadan «Buyurtma berish» tugmasini bosing.")
 
 
+@user.message(F.web_app_data)
+async def handle_mini_app_order(m: Message, bot: Bot):
+    try:
+        data = json.loads(m.web_app_data.data)
+        c_name = str(data.get("customer_name") or m.from_user.full_name)
+        c_phone = str(data.get("customer_phone") or "")
+        addr = str(data.get("delivery_address") or "Ko'rsatilmadi")
+        notes = str(data.get("notes") or "")
+        raw_items = data.get("items") or []
+        total = int(data.get("total") or 0)
+        coords = data.get("coords") or {}
+        lat = coords.get("lat")
+        lon = coords.get("lon")
+
+        # items: list of (product_name, price, qty)
+        items_list = []
+        for it in raw_items:
+            pname = it.get("name") or "ECO Mahsulot"
+            pr = int(it.get("price") or 225000)
+            qty = int(it.get("qty") or 1)
+            items_list.append((pname, pr, qty))
+
+        if not items_list:
+            await m.answer("Savatchangiz bo'sh. Iltimos, mahsulot miqdorini tanlang.")
+            return
+
+        if total <= 0:
+            total = sum(p * q for _, p, q in items_list)
+
+        # Foydalanuvchini bazada saqlash/yangilash
+        db.touch_user(m.from_user.id, c_name)
+        if c_phone:
+            db.register(m.from_user.id, c_name, c_phone)
+
+        # Buyurtma yaratish
+        oid = db.create_direct_order(
+            uid=m.from_user.id,
+            user_name=c_name,
+            phone=c_phone,
+            total=total,
+            items=items_list,
+            lat=lat,
+            lon=lon,
+        )
+
+        # Mijozga tasdiq
+        items_summary = "\n".join([f"• <b>{esc(name)}</b> × {qty} ta ({money(price * qty)} so'm)" for name, price, qty in items_list])
+        await m.answer(
+            f"🎉 <b>Rahmat! Buyurtmangiz qabul qilindi!</b>\n\n"
+            f"📦 Buyurtma raqami: <b>№{oid}</b>\n"
+            f"🛍 <b>Tarkibi:</b>\n{items_summary}\n\n"
+            f"💰 <b>Jami summa:</b> <b>{money(total)} so'm</b>\n"
+            f"📍 <b>Manzil:</b> {esc(addr)}\n"
+            f"{f'📝 <b>Izoh:</b> {esc(notes)}\n' if notes else ''}\n"
+            f"Tez orada operatorimiz siz bilan bog'lanadi va yetkazib berish boshlanadi!",
+            reply_markup=main_menu(is_admin(m.from_user.id)),
+        )
+
+        # Adminga bildirishnoma
+        admin_kb_rows = [
+            [btn("✅ Qabul qilish", f"st:{oid}:accepted"), btn("🚚 Yetkazilmoqda", f"st:{oid}:delivering")],
+            [btn("🎉 Yakunlash", f"st:{oid}:done"), btn("❌ Bekor qilish", f"st:{oid}:cancelled")],
+        ]
+        if lat and lon:
+            admin_kb_rows.append([
+                InlineKeyboardButton(text="🗺 Google Maps", url=f"https://www.google.com/maps?q={lat},{lon}")
+            ])
+        admin_kb = InlineKeyboardMarkup(inline_keyboard=admin_kb_rows)
+
+        admin_text = (
+            f"🔔 <b>YANGI BUYURTMA №{oid} (Mini App orqali)</b>\n\n"
+            f"👤 <b>Mijoz:</b> {esc(c_name)}\n"
+            f"📱 <b>Telefon:</b> <code>{esc(c_phone)}</code>\n"
+            f"📍 <b>Manzil:</b> {esc(addr)}\n"
+            f"{f'📝 <b>Izoh:</b> {esc(notes)}\n' if notes else ''}\n"
+            f"🛍 <b>Mahsulotlar:</b>\n{items_summary}\n\n"
+            f"💰 <b>Jami:</b> <b>{money(total)} so'm</b>"
+        )
+
+        for aid in ADMIN_IDS:
+            try:
+                await bot.send_message(aid, admin_text, reply_markup=admin_kb)
+                if lat and lon:
+                    await bot.send_location(aid, latitude=lat, longitude=lon)
+            except Exception:
+                log.exception("Adminga (%s) buyurtma yuborishda xatolik", aid)
+
+    except Exception:
+        log.exception("Mini App ma'lumotlarini qabul qilishda xatolik")
+        await m.answer("Buyurtmani qayta ishlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.")
+
+
 @user.message(F.text)
 async def fallback(m: Message):
     await m.answer("Iltimos, pastdagi menyudan foydalaning.", reply_markup=main_menu(is_admin(m.from_user.id)))
@@ -928,28 +1027,124 @@ async def main() -> None:
         except Exception:
             log.warning("Admin (%s) uchun buyruqlar o'rnatilmadi (admin hali /start bosmagan bo'lishi mumkin)", aid)
 
+    # Mini App Menu tugmasi
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="🛍 Do'kon", web_app=WebAppInfo(url=WEBAPP_URL))
+        )
+    except Exception:
+        pass
+
     backup_task = asyncio.create_task(backup_loop())
     me = await bot.get_me()
     log.info("Bot ishga tushdi: @%s", me.username)
 
-    # Render yoki boshqa hostinglar uchun port tinglash (health check)
-    port = os.getenv("PORT")
+    # Render yoki boshqa hostinglar uchun port tinglash (health check & API)
+    port = os.getenv("PORT") or "8080"
     web_runner = None
     if port:
         try:
             from aiohttp import web
 
+            @web.middleware
+            async def cors_middleware(request, handler):
+                if request.method == "OPTIONS":
+                    resp = web.Response(status=204)
+                else:
+                    try:
+                        resp = await handler(request)
+                    except web.HTTPException as ex:
+                        resp = ex
+                resp.headers["Access-Control-Allow-Origin"] = "*"
+                resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+                resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                return resp
+
             async def health(_req):
                 return web.Response(text="ECO Bot 100% aktiv ishlamoqda!")
 
-            srv = web.Application()
+            async def api_order(request):
+                try:
+                    data = await request.json()
+                    c_name = str(data.get("customer_name") or "Mijoz")
+                    c_phone = str(data.get("customer_phone") or "")
+                    addr = str(data.get("delivery_address") or "Ko'rsatilmadi")
+                    notes = str(data.get("notes") or "")
+                    raw_items = data.get("items") or []
+                    total = int(data.get("total") or 0)
+                    coords = data.get("coords") or {}
+                    lat = coords.get("lat")
+                    lon = coords.get("lon")
+
+                    items_list = []
+                    for it in raw_items:
+                        pname = it.get("name") or "ECO Mahsulot"
+                        pr = int(it.get("price") or 225000)
+                        qty = int(it.get("qty") or 1)
+                        items_list.append((pname, pr, qty))
+
+                    if not items_list:
+                        return web.json_response({"ok": False, "error": "Savatcha bo'sh"}, status=400)
+
+                    if total <= 0:
+                        total = sum(p * q for _, p, q in items_list)
+
+                    oid = db.create_direct_order(
+                        uid=0,
+                        user_name=c_name,
+                        phone=c_phone,
+                        total=total,
+                        items=items_list,
+                        lat=lat,
+                        lon=lon,
+                    )
+
+                    items_summary = "\n".join([f"• <b>{esc(name)}</b> × {qty} ta ({money(price * qty)} so'm)" for name, price, qty in items_list])
+                    admin_kb_rows = [
+                        [btn("✅ Qabul qilish", f"st:{oid}:accepted"), btn("🚚 Yetkazilmoqda", f"st:{oid}:delivering")],
+                        [btn("🎉 Yakunlash", f"st:{oid}:done"), btn("❌ Bekor qilish", f"st:{oid}:cancelled")],
+                    ]
+                    if lat and lon:
+                        admin_kb_rows.append([
+                            InlineKeyboardButton(text="🗺 Google Maps", url=f"https://www.google.com/maps?q={lat},{lon}")
+                        ])
+                    admin_kb = InlineKeyboardMarkup(inline_keyboard=admin_kb_rows)
+
+                    admin_text = (
+                        f"🔔 <b>YANGI BUYURTMA №{oid} (Mini App Web orqali)</b>\n\n"
+                        f"👤 <b>Mijoz:</b> {esc(c_name)}\n"
+                        f"📱 <b>Telefon:</b> <code>{esc(c_phone)}</code>\n"
+                        f"📍 <b>Manzil:</b> {esc(addr)}\n"
+                        f"{f'📝 <b>Izoh:</b> {esc(notes)}\n' if notes else ''}\n"
+                        f"🛍 <b>Mahsulotlar:</b>\n{items_summary}\n\n"
+                        f"💰 <b>Jami:</b> <b>{money(total)} so'm</b>"
+                    )
+
+                    for aid in ADMIN_IDS:
+                        try:
+                            await bot.send_message(aid, admin_text, reply_markup=admin_kb)
+                            if lat and lon:
+                                await bot.send_location(aid, latitude=lat, longitude=lon)
+                        except Exception:
+                            log.exception("Adminga xabar yuborishda xatolik")
+
+                    return web.json_response({"ok": True, "order_id": oid})
+                except Exception as e:
+                    return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+            srv = web.Application(middlewares=[cors_middleware])
             srv.router.add_get("/", health)
             srv.router.add_get("/health", health)
+            srv.router.add_post("/api/order", api_order)
+            docs_dir = BASE_DIR / "docs"
+            if docs_dir.exists():
+                srv.router.add_static("/static/", path=docs_dir, show_index=True)
+
             web_runner = web.AppRunner(srv)
             await web_runner.setup()
             site = web.TCPSite(web_runner, "0.0.0.0", int(port))
             await site.start()
-            log.info("Health check server %s portda tinglamoqda", port)
+            log.info("Health & API server %s portda tinglamoqda", port)
         except Exception:
             log.exception("Health check serverni ishga tushirishda xatolik")
 
