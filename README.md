@@ -16,6 +16,19 @@ savatcha, joylashuv yuborish, adminga bildirishnoma va buyurtma holatlarini bosh
 3. `.env` faylida token va admin ID turibdi (`BOT_TOKEN`, `ADMIN_IDS`). Bir nechta admin: vergul bilan `111,222`.
 4. **Admin botga bir marta /start bosishi shart** — aks holda bot unga bildirishnoma yubora olmaydi.
 
+## Render'da ishga tushirish (Cloud Hosting)
+
+1. Quyidagi 1 bosishli havola orqali Render Blueprint'ni oching:
+   https://render.com/deploy?repo=https://github.com/Kamol0303/eco_tabaco/tree/birinchisi
+2. `BOT_TOKEN` va `ADMIN_IDS` qiymatlarini kiriting (`WEBAPP_URL` Render'ning `RENDER_EXTERNAL_URL` manzilidan avtomatik olinadi).
+3. Qo'lda sozlash uchun Render'da **Web Service** yarating:
+   - Branch: `birinchisi`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `python bot.py`
+   - Health Check Path: `/api/health`
+   - Muhit o'zgaruvchilari: `BOT_TOKEN`, `ADMIN_IDS`
+4. **Muhim:** Bot Render'da ishlayotganda lokal kompyuterdagi nusxasini to'xtatib qo'ying (aks holda Telegram `TelegramConflictError` beradi).
+
 ## VPS'da doimiy ishlashi (systemd)
 
 `/etc/systemd/system/ecobot.service`:

@@ -4,6 +4,7 @@ import html
 import logging
 import re
 import socket
+import sys
 from datetime import datetime
 
 from aiohttp import web
@@ -1014,7 +1015,7 @@ async def start_tunnel_if_needed() -> tuple[asyncio.subprocess.Process | None, a
     cf_bin = BASE_DIR / "cloudflared.exe"
     if WEBAPP_URL and WEBAPP_URL.startswith("https://") and "trycloudflare.com" not in WEBAPP_URL:
         return None, None, WEBAPP_URL
-    if not cf_bin.exists():
+    if sys.platform != "win32" or not cf_bin.exists():
         return None, None, WEBAPP_URL or ""
     log.info("Avtomatik Cloudflare HTTPS tunneli ishga tushirilmoqda...")
     proc = await asyncio.create_subprocess_exec(
@@ -1046,7 +1047,8 @@ async def start_tunnel_if_needed() -> tuple[asyncio.subprocess.Process | None, a
 async def main() -> None:
     tunnel_proc, tunnel_drain_task, active_url = await start_tunnel_if_needed()
     session = AiohttpSession(timeout=60.0)
-    session._connector_init["family"] = socket.AF_INET
+    if sys.platform == "win32":
+        session._connector_init["family"] = socket.AF_INET
     bot = Bot(BOT_TOKEN, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
 
@@ -1110,6 +1112,10 @@ async def main() -> None:
     backup_task = asyncio.create_task(backup_loop())
     me = await bot.get_me()
     log.info("Bot ishga tushdi: @%s", me.username)
+    try:
+        await bot.delete_webhook(drop_pending_updates=False)
+    except Exception:
+        pass
     try:
         await dp.start_polling(bot)
     finally:

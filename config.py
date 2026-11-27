@@ -12,14 +12,14 @@ ADMIN_IDS = {
     int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit()
 }
 
-DB_PATH = BASE_DIR / "data" / "bot.db"
+DB_PATH = Path((os.getenv("DB_PATH") or "").strip() or (BASE_DIR / "data" / "bot.db"))
 BACKUP_DIR = BASE_DIR / "backups"
 LOG_PATH = BASE_DIR / "data" / "bot.log"
 WEBAPP_DIR = BASE_DIR / "webapp"
 
 WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0").strip()
-WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
-WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
+WEBAPP_PORT = int((os.getenv("PORT") or os.getenv("WEBAPP_PORT") or "8080").strip())
+WEBAPP_URL = (os.getenv("WEBAPP_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip()
 
 DEFAULT_PRICE = 225_000   # so'm (bazada keyin /narx buyrug'i bilan o'zgartiriladi)
 MAX_QTY = 50              # bitta mahsulotdan maksimal miqdor

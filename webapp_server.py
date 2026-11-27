@@ -493,6 +493,7 @@ def create_webapp(
     h = WebAppHandler(db, notify_admins_cb=notify_admins_cb, notify_user_status_cb=notify_user_status_cb)
 
     app.router.add_get("/", h.index)
+    app.router.add_get("/health", h.health)
     app.router.add_get("/api/health", h.health)
     app.router.add_get("/api/bootstrap", h.bootstrap)
     app.router.add_post("/api/age-confirm", h.age_confirm)
