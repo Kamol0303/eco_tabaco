@@ -4,6 +4,29 @@
 
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const DEFAULT_COORDS = { lat: 41.2995, lon: 69.2401 }; // Toshkent markazi
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlLaunchToken = urlParams.get("tg_auth") || "";
+  const urlInitialTab = urlParams.get("tab") || "";
+  if (urlLaunchToken) {
+    try {
+      sessionStorage.setItem("eco_tg_auth", urlLaunchToken);
+    } catch (_) {}
+  }
+  if (urlLaunchToken || urlInitialTab) {
+    try {
+      const cleanParams = new URLSearchParams(window.location.search);
+      cleanParams.delete("tg_auth");
+      const qs = cleanParams.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}`);
+    } catch (_) {}
+  }
+  let storedLaunchToken = urlLaunchToken;
+  if (!storedLaunchToken) {
+    try {
+      storedLaunchToken = sessionStorage.getItem("eco_tg_auth") || "";
+    } catch (_) {}
+  }
+  const allowedUserTabs = new Set(["catalog", "cart", "orders", "profile"]);
 
   const state = {
     user: null,
@@ -12,7 +35,8 @@
     orders: [],
     statuses: {},
     flow: [],
-    activeTab: "catalog",
+    activeTab: allowedUserTabs.has(urlInitialTab) ? urlInitialTab : "catalog",
+    launchToken: storedLaunchToken,
     demoRole: localStorage.getItem("eco_demo_role") || "customer",
     modalProductId: null,
     adminTab: "orders",
@@ -75,6 +99,8 @@
     );
     if (tg && tg.initData) {
       headers["X-Telegram-Init-Data"] = tg.initData;
+    } else if (state.launchToken) {
+      headers["X-Telegram-Launch-Token"] = state.launchToken;
     } else {
       headers["X-Demo-Role"] = state.demoRole;
     }

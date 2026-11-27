@@ -1,5 +1,6 @@
 """ECO Telegram Mini App backend (aiohttp) — API va statik fayllar serveri."""
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -96,6 +97,39 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     return {"id": uid, "name": full_name, "username": tg_user.get("username")}
 
 
+def create_launch_token(uid: int, name: str, bot_token: str, ttl_sec: int = 30 * 86400) -> str:
+    """Bot klaviaturasi (ReplyKeyboard web_app) tugmalari uchun imzolangan kirish tokeni yaratadi."""
+    payload_obj = {"uid": int(uid), "name": str(name or f"User {uid}")[:80], "exp": int(time.time()) + ttl_sec}
+    raw = json.dumps(payload_obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    b64 = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    secret = hmac.new(b"EcoLaunchToken", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    sig = hmac.new(secret, b64.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{b64}.{sig}"
+
+
+def verify_launch_token(token: str, bot_token: str) -> dict | None:
+    """Imzolangan Mini App kirish tokenini tekshiradi."""
+    if not token or "." not in token:
+        return None
+    b64, sig = token.split(".", 1)
+    if not b64 or not sig:
+        return None
+    secret = hmac.new(b"EcoLaunchToken", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    expected = hmac.new(secret, b64.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return None
+    try:
+        padded = b64 + "=" * (-len(b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        uid = int(payload["uid"])
+        exp = int(payload["exp"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    if exp <= time.time():
+        return None
+    return {"id": uid, "name": str(payload.get("name") or f"User {uid}")}
+
+
 def normalize_phone(raw: str) -> str | None:
     cleaned = re.sub(r"[\s\-()]+", "", (raw or "").strip())
     if not PHONE_RE.match(cleaned):
@@ -129,6 +163,22 @@ class WebAppHandler:
                 "name": tg_user["name"],
                 "is_admin": tg_user["id"] in ADMIN_IDS,
                 "source": "telegram",
+            }
+
+        launch_token = request.headers.get("X-Telegram-Launch-Token", "").strip()
+        if launch_token:
+            tg_user = verify_launch_token(launch_token, BOT_TOKEN)
+            if not tg_user:
+                raise web.HTTPUnauthorized(
+                    text=json.dumps({"ok": False, "error": "Mini App havolasi eskirgan, botda /start bosing.", "code": "invalid_launch_token"}),
+                    content_type="application/json",
+                )
+            self.db.touch_user(tg_user["id"], tg_user["name"])
+            return {
+                "id": tg_user["id"],
+                "name": tg_user["name"],
+                "is_admin": tg_user["id"] in ADMIN_IDS,
+                "source": "telegram_keyboard",
             }
 
         if _is_local_preview_request(request):

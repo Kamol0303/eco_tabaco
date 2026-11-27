@@ -7,6 +7,7 @@ import socket
 import sys
 from datetime import datetime
 
+from urllib.parse import urlencode
 from aiohttp import web
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -48,7 +49,7 @@ from config import (
     WEBAPP_URL,
 )
 from db import Database, now_str
-from webapp_server import create_webapp
+from webapp_server import create_launch_token, create_webapp
 
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -186,19 +187,33 @@ def has_https_webapp() -> bool:
     return WEBAPP_URL.startswith("https://")
 
 
-def main_menu(admin: bool = False) -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
+def webapp_url_for(uid: int | None = None, name: str = "", tab: str | None = None) -> str:
+    params = {}
+    if uid is not None:
+        params["tg_auth"] = create_launch_token(uid, name, BOT_TOKEN)
+    if tab:
+        params["tab"] = tab
+    if not params:
+        return WEBAPP_URL
+    sep = "&" if "?" in WEBAPP_URL else "?"
+    return f"{WEBAPP_URL}{sep}{urlencode(params)}"
+
+
+def main_menu(admin: bool = False, uid: int | None = None, name: str = "") -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
     if has_https_webapp():
+        url = webapp_url_for(uid, name)
         return ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🌐 Mini App (Do'kon)", web_app=WebAppInfo(url=WEBAPP_URL))]],
+            keyboard=[[KeyboardButton(text="🌐 Mini App (Do'kon)", web_app=WebAppInfo(url=url))]],
             resize_keyboard=True,
         )
     return ReplyKeyboardRemove()
 
 
-def admin_menu() -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
+def admin_menu(uid: int | None = None, name: str = "") -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
     if has_https_webapp():
+        url = webapp_url_for(uid, name)
         return ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🌐 Mini App (Admin panel)", web_app=WebAppInfo(url=WEBAPP_URL))]],
+            keyboard=[[KeyboardButton(text="🌐 Mini App (Admin panel)", web_app=WebAppInfo(url=url))]],
             resize_keyboard=True,
         )
     return ReplyKeyboardRemove()
@@ -382,7 +397,7 @@ class RegisteredOnly(BaseMiddleware):
                 if has_https_webapp():
                     await event.answer(
                         "🛍 Buyurtma berish uchun pastdagi Mini App tugmasi orqali do'konni oching:",
-                        reply_markup=main_menu(False),
+                        reply_markup=main_menu(False, uid=u.id, name=u.full_name),
                     )
                 else:
                     await event.answer("Avval ro'yxatdan o'ting: /start buyrug'ini bosing.")
@@ -412,14 +427,14 @@ async def cmd_start(m: Message, state: FSMContext):
     if is_admin(u.id):
         await m.answer(
             f"🔧 <b>Admin panel</b>\nAssalomu alaykum, <b>{esc(u.full_name)}</b>! Buyurtmalar, mahsulotlar va mijozlarni boshqarish uchun quyidagi tugma orqali Admin panelni oching.",
-            reply_markup=admin_menu(),
+            reply_markup=admin_menu(uid=u.id, name=u.full_name),
         )
         if has_https_webapp():
             await m.answer(
                 "📊 Mini App Admin panelini ochish:",
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[
-                        [InlineKeyboardButton(text="🔧 Admin panelni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+                        [InlineKeyboardButton(text="🔧 Admin panelni ochish", web_app=WebAppInfo(url=webapp_url_for(u.id, u.full_name)))]
                     ]
                 ),
             )
@@ -427,15 +442,16 @@ async def cmd_start(m: Message, state: FSMContext):
     row = db.get_user(u.id)
     if has_https_webapp():
         greeting_name = row["name"] if row else u.full_name
+        user_url = webapp_url_for(u.id, greeting_name)
         await m.answer(
             f"Assalomu alaykum, <b>{esc(greeting_name)}</b>! 👋\n<b>ECO</b> do'koniga xush kelibsiz. Buyurtma berish uchun pastdagi tugma orqali do'konni oching.",
-            reply_markup=main_menu(False),
+            reply_markup=main_menu(False, uid=u.id, name=greeting_name),
         )
         await m.answer(
             "🛍 <b>ECO Mini App</b> orqali mahsulotlarni tanlab buyurtma bering:",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="🛍 Mini App do'konini ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+                    [InlineKeyboardButton(text="🛍 Mini App do'konini ochish", web_app=WebAppInfo(url=user_url))]
                 ]
             ),
         )
@@ -495,7 +511,7 @@ async def on_contact(m: Message):
     log.info("Yangi foydalanuvchi ro'yxatdan o'tdi: %s", u.id)
     await m.answer(
         "✅ Ro'yxatdan o'tdingiz! Endi mahsulotlarni tanlashingiz mumkin.",
-        reply_markup=main_menu(is_admin(u.id)),
+        reply_markup=admin_menu(uid=u.id, name=u.full_name) if is_admin(u.id) else main_menu(False, uid=u.id, name=u.full_name),
     )
 
 
@@ -560,8 +576,12 @@ async def send_order_status_notification(bot: Bot, uid: int, oid: int, code: str
     )
     kb = None
     if has_https_webapp():
+        u_row = db.get_user(uid)
+        u_name = u_row["name"] if u_row else ""
         kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="🛍 Do'konda ko'rish", web_app=WebAppInfo(url=WEBAPP_URL))]]
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🛍 Do'konda ko'rish", web_app=WebAppInfo(url=webapp_url_for(uid, u_name, tab="orders")))]
+            ]
         )
     try:
         await bot.send_message(uid, text, reply_markup=kb)
@@ -572,17 +592,18 @@ async def send_order_status_notification(bot: Bot, uid: int, oid: int, code: str
 @admin.message(Command("admin"))
 @admin.message(F.text == BTN_ADMIN)
 async def a_panel(m: Message):
+    u = m.from_user
     await m.answer(
         "🔧 <b>Admin panel</b>\nPastdagi tugma orqali Admin panelni oching.\n"
         "Qidirish: <code>/qidirish ism yoki telefon yoki raqam</code>",
-        reply_markup=admin_menu(),
+        reply_markup=admin_menu(uid=u.id, name=u.full_name),
     )
     if has_https_webapp():
         await m.answer(
             "📊 Mini App Admin panelini ochish:",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="🔧 Admin panelni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+                    [InlineKeyboardButton(text="🔧 Admin panelni ochish", web_app=WebAppInfo(url=webapp_url_for(u.id, u.full_name)))]
                 ]
             ),
         )
@@ -590,7 +611,7 @@ async def a_panel(m: Message):
 
 @admin.message(F.text == A_BACK)
 async def a_back(m: Message):
-    await m.answer("🔧 <b>Admin panel</b>", reply_markup=admin_menu())
+    await m.answer("🔧 <b>Admin panel</b>", reply_markup=admin_menu(uid=m.from_user.id, name=m.from_user.full_name))
 
 
 @admin.message(F.text == A_NEW)
@@ -745,7 +766,10 @@ async def a_price(m: Message, command: CommandObject):
 
 @admin.message()
 async def admin_fallback(m: Message):
-    await m.answer("🔧 <b>Admin panel</b>\nPastdagi tugma orqali Admin panelni oching.", reply_markup=admin_menu())
+    await m.answer(
+        "🔧 <b>Admin panel</b>\nPastdagi tugma orqali Admin panelni oching.",
+        reply_markup=admin_menu(uid=m.from_user.id, name=m.from_user.full_name),
+    )
 
 
 # ---------------------- Foydalanuvchi menyusi ----------------------
@@ -982,7 +1006,7 @@ async def stray_location(m: Message):
 async def fallback(m: Message):
     await m.answer(
         "🛍 Buyurtma berish uchun pastdagi tugma orqali Mini App do'konini oching.",
-        reply_markup=main_menu(False),
+        reply_markup=main_menu(False, uid=m.from_user.id, name=m.from_user.full_name),
     )
 
 
