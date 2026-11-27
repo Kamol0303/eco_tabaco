@@ -664,44 +664,78 @@
     }
   }
 
+  function initSingleAdminMap(el, lat, lon, pinIcon) {
+    if (!el || el.dataset.mapInit === "1" || typeof window.L === "undefined") return;
+    el.dataset.mapInit = "1";
+    try {
+      const m = L.map(el, {
+        center: [lat, lon],
+        zoom: 15,
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        tap: false,
+      });
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+        subdomains: "abcd",
+        maxZoom: 19,
+      }).addTo(m);
+      L.marker([lat, lon], { icon: pinIcon, interactive: false }).addTo(m);
+      state.adminMaps.push(m);
+      setTimeout(() => {
+        try {
+          m.invalidateSize();
+        } catch (_) {}
+      }, 120);
+    } catch (_) {}
+  }
+
   function mountAdminOrderMaps(orders) {
     if (typeof window.L === "undefined") return;
+    if (state.adminMapObserver) {
+      try {
+        state.adminMapObserver.disconnect();
+      } catch (_) {}
+      state.adminMapObserver = null;
+    }
     const pinIcon = L.divIcon({
       className: "eco-pin-wrap",
       html: `<div style="width:18px;height:18px;border-radius:50%;background:#e6b82e;border:2.5px solid #0b0e0c;box-shadow:0 0 0 4px rgba(230,184,46,0.35);"></div>`,
       iconSize: [18, 18],
       iconAnchor: [9, 9],
     });
+
+    const targets = [];
     orders.forEach((o) => {
       const lat = Number(o.lat);
       const lon = Number(o.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
       const el = document.getElementById(`adminOrderMap-${o.id}`);
-      if (!el) return;
-      try {
-        const m = L.map(el, {
-          center: [lat, lon],
-          zoom: 15,
-          zoomControl: false,
-          attributionControl: false,
-          dragging: false,
-          touchZoom: false,
-          scrollWheelZoom: false,
-          doubleClickZoom: false,
-          boxZoom: false,
-          keyboard: false,
-          tap: false,
-        });
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(m);
-        L.marker([lat, lon], { icon: pinIcon, interactive: false }).addTo(m);
-        state.adminMaps.push(m);
-        setTimeout(() => {
-          try {
-            m.invalidateSize();
-          } catch (_) {}
-        }, 120);
-      } catch (_) {}
+      if (el) targets.push({ el, lat, lon });
     });
+
+    if (typeof window.IntersectionObserver === "function") {
+      const obs = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            const el = entry.target;
+            initSingleAdminMap(el, Number(el.dataset.lat), Number(el.dataset.lon), pinIcon);
+            obs.unobserve(el);
+          });
+        },
+        { rootMargin: "200px 0px" }
+      );
+      targets.forEach(({ el }) => obs.observe(el));
+      state.adminMapObserver = obs;
+    } else {
+      targets.forEach(({ el, lat, lon }) => initSingleAdminMap(el, lat, lon, pinIcon));
+    }
   }
 
   function renderAdmin() {
@@ -797,10 +831,10 @@
                 <div class="order-map-box" id="adminOrderMap-${o.id}" data-lat="${latNum}" data-lon="${lonNum}"></div>
                 <div class="order-route-actions">
                   <a class="route-btn" href="${gmapsRouteUrl}" data-ext-url="${gmapsRouteUrl}" target="_blank" rel="noopener">
-                    📍 Google Maps (Marshrut)
+                    📍 Google Marshrut
                   </a>
                   <a class="route-btn yandex" href="${yandexRouteUrl}" data-ext-url="${yandexRouteUrl}" target="_blank" rel="noopener">
-                    🧭 Yandex Xarita
+                    🧭 Yandex Marshrut
                   </a>
                 </div>
               </div>
