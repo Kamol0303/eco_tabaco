@@ -249,17 +249,15 @@ async def send_order_status_notification(bot: Bot, db: Database, uid: int, oid: 
         log.warning("Foydalanuvchiga (%s) holat xabari yuborilmadi: %s", uid, e)
 
 
-def main_menu(admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu(admin: bool = False, superadmin: bool = False) -> ReplyKeyboardMarkup:
+    rows = []
     if has_https_webapp():
-        return ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🛍 Do'kon", web_app=WebAppInfo(url=WEBAPP_URL))]],
-            resize_keyboard=True,
-        )
-    rows = [
-        [KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)],
-        [KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE)],
-    ]
-    if admin:
+        rows.append([KeyboardButton(text="🛍 Do'kon", web_app=WebAppInfo(url=WEBAPP_URL))])
+    rows.append([KeyboardButton(text=BTN_CATALOG), KeyboardButton(text=BTN_CART)])
+    rows.append([KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_PROFILE)])
+    if superadmin:
+        rows.append([KeyboardButton(text="🏭 SuperAdmin Paneli")])
+    elif admin:
         rows.append([KeyboardButton(text=BTN_ADMIN)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
@@ -560,17 +558,12 @@ async def cmd_start(m: Message, state: FSMContext):
     db.touch_user(u.id, u.full_name)
     row = db.get_user(u.id)
     if row["phone"]:
-        inline_kb = None
-        if has_https_webapp():
-            inline_kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
-                ]
-            )
+        sup = is_superadmin(u.id)
+        adm = is_admin_or_dealer(u.id)
         await m.answer(
             f"Assalomu alaykum, <b>{esc(row['name'])}</b>! 👋\n"
-            "ECO mahsulotlarini ko'rish va buyurtma berish uchun pastdagi <b>«🛍 Do'kon»</b> tugmasini bosing:",
-            reply_markup=inline_kb or main_menu(is_admin(u.id)),
+            "ECO mahsulotlarini ko'rish va buyurtma berish uchun quyidagi menyudan foydalaning:",
+            reply_markup=main_menu(admin=adm, superadmin=sup),
         )
         return
     await m.answer(
@@ -620,16 +613,11 @@ async def on_contact(m: Message):
     phone = c.phone_number if c.phone_number.startswith("+") else "+" + c.phone_number
     db.register(u.id, u.full_name, phone)
     log.info("Yangi foydalanuvchi ro'yxatdan o'tdi: %s", u.id)
-    inline_kb = None
-    if has_https_webapp():
-        inline_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
-            ]
-        )
+    sup = is_superadmin(u.id)
+    adm = is_admin_or_dealer(u.id)
     await m.answer(
-        "✅ Ro'yxatdan o'tdingiz! Buyurtma berish uchun pastdagi <b>«🛍 Do'kon»</b> tugmasini bosing.",
-        reply_markup=inline_kb or main_menu(is_admin(u.id)),
+        "✅ Ro'yxatdan o'tdingiz! Buyurtma berish uchun quyidagi menyudan foydalaning:",
+        reply_markup=main_menu(admin=adm, superadmin=sup),
     )
 
 
@@ -687,9 +675,28 @@ async def a_panel(m: Message):
     )
 
 
+@admin.message(F.text == "🏭 SuperAdmin Paneli")
+async def m_superadmin_panel(m: Message):
+    if not is_superadmin(m.from_user.id):
+        await m.answer("Faqat SuperAdmin uchun ruxsat etilgan.")
+        return
+    text = (
+        "👑 <b>ECO ZAVOD BOSHQARUV PANELI (SUPERADMIN)</b>\n\n"
+        "Butun zavod ombori, 12 ta viloyat dilerlari, tovar taqsimoti, barcha buyurtmalar va "
+        "moliyaviy hisobotlarni boshqarish uchun pastdagi tugmani bosing:"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏭 Zavod Panelini Ochish", web_app=WebAppInfo(url=WEBAPP_URL))]
+        ]
+    ) if has_https_webapp() else None
+    await m.answer(text, reply_markup=kb)
+
+
 @admin.message(F.text == A_BACK)
 async def a_back(m: Message):
-    await m.answer("Asosiy menyu.", reply_markup=main_menu(True))
+    sup = is_superadmin(m.from_user.id)
+    await m.answer("Asosiy menyu.", reply_markup=main_menu(admin=True, superadmin=sup))
 
 
 @admin.message(F.text == A_NEW)
@@ -1107,6 +1114,20 @@ async def backup_loop() -> None:
         await asyncio.sleep(24 * 3600)
 
 
+async def keepalive_loop() -> None:
+    """Render Free rejasida server uxshab qolmasligi uchun har 9 daqiqada o'zini ping qiladi."""
+    await asyncio.sleep(20)
+    target_url = (WEBAPP_URL.rstrip("/") + "/api/health") if WEBAPP_URL.startswith("http") else f"http://127.0.0.1:{WEBAPP_PORT}/api/health"
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(target_url, timeout=10) as r:
+                    log.info("Keep-alive ping muvaffaqiyatli: %s (status=%d)", target_url, r.status)
+            except Exception as e:
+                log.debug("Keep-alive ping: %s", e)
+            await asyncio.sleep(540)
+
+
 async def main() -> None:
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
@@ -1165,12 +1186,14 @@ async def main() -> None:
     log.info("Mini App server ishga tushdi: http://%s:%s", WEBAPP_HOST, WEBAPP_PORT)
 
     backup_task = asyncio.create_task(backup_loop())
+    keepalive_task = asyncio.create_task(keepalive_loop())
     me = await bot.get_me()
     log.info("Bot ishga tushdi: @%s", me.username)
     try:
         await dp.start_polling(bot)
     finally:
         backup_task.cancel()
+        keepalive_task.cancel()
         await web_runner.cleanup()
         await bot.session.close()
 

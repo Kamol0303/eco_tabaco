@@ -119,7 +119,6 @@
   }
 
   function showCustomerTab(tab) {
-    if (state.user && (state.user.is_superadmin || state.user.is_dealer)) return;
     state.activeTab = tab;
     if (tab !== "cart") state.orderPlacedSuccess = false;
 
@@ -158,6 +157,17 @@
     });
 
     hideAllViews();
+    renderHeader();
+
+    if (tab === "catalog") {
+      const v = document.getElementById("viewCatalog");
+      if (v) v.classList.add("active");
+      renderCatalog();
+      updateFloatingCartBar();
+      haptic("select");
+      return;
+    }
+
     const mapTab = {
       overview: "viewSuperOverview",
       factory: "viewSuperFactory",
@@ -212,7 +222,11 @@
   function updateFloatingCartBar() {
     const bar = document.getElementById("floatingCartBar");
     if (!bar) return;
-    if (state.user && (state.user.is_superadmin || state.user.is_dealer)) {
+    if (state.user && state.user.is_dealer) {
+      bar.classList.add("hidden");
+      return;
+    }
+    if (state.user && state.user.is_superadmin && state.activeSuperTab !== "catalog") {
       bar.classList.add("hidden");
       return;
     }
@@ -233,19 +247,25 @@
 
     const sub = document.getElementById("brandSubTitle");
     const nameEl = document.getElementById("userBadgeName");
+    const modeBtn = document.getElementById("btnToggleAdminMode");
 
     if (u.is_superadmin) {
-      sub.textContent = "ZAVOD BOSHQARUV PANELI";
       nameEl.textContent = `👑 SuperAdmin: ${u.name}`;
+      if (modeBtn) {
+        modeBtn.classList.remove("hidden");
+        const inShop = state.activeSuperTab === "catalog";
+        modeBtn.textContent = inShop ? "👑 Zavod Paneli" : "🛍 Tovarlarga o'tish";
+      }
+      sub.textContent = state.activeSuperTab === "catalog" ? "INNOVATION TOBACCO" : "ZAVOD BOSHQARUV PANELI";
       document.getElementById("customerNav").classList.add("hidden");
       document.getElementById("dealerNav").classList.add("hidden");
       document.getElementById("superadminNav").classList.remove("hidden");
-      document.getElementById("floatingCartBar").classList.add("hidden");
       document.getElementById("ageGateModal").classList.add("hidden");
     } else if (u.is_dealer) {
       const reg = u.dealer_info ? u.dealer_info.region_name : "Hududiy";
       sub.textContent = `DILER · ${reg.toUpperCase()}`;
       nameEl.textContent = `🛡 Diler: ${u.name}`;
+      if (modeBtn) modeBtn.classList.add("hidden");
       document.getElementById("customerNav").classList.add("hidden");
       document.getElementById("superadminNav").classList.add("hidden");
       document.getElementById("dealerNav").classList.remove("hidden");
@@ -254,6 +274,7 @@
     } else {
       sub.textContent = "INNOVATION TOBACCO";
       nameEl.textContent = u.name || "Mijoz";
+      if (modeBtn) modeBtn.classList.add("hidden");
       document.getElementById("superadminNav").classList.add("hidden");
       document.getElementById("dealerNav").classList.add("hidden");
       document.getElementById("customerNav").classList.remove("hidden");
@@ -262,9 +283,8 @@
 
   // ==================== MIJOZ QISMI (KATALOG, SAVATCHA, PROFIL) ====================
   function renderCatalog() {
-    if (state.user && (state.user.is_superadmin || state.user.is_dealer)) return;
-
     const grid = document.getElementById("catalogGrid");
+    if (!grid) return;
     document.getElementById("productCountLabel").textContent = `${state.products.length} turdagi mahsulot`;
 
     grid.innerHTML = state.products
@@ -1162,17 +1182,17 @@
           Object.keys(state.statuses).map(k => `<option value="${k}">${esc(state.statuses[k])}</option>`).join("");
       }
 
+      renderCatalog();
+      updateCartBadges();
+      renderOrders();
+      renderProfile();
       renderHeader();
 
       if (state.user.is_superadmin) {
-        showSuperTab(state.activeSuperTab || "overview");
+        showSuperTab(state.activeSuperTab || "catalog");
       } else if (state.user.is_dealer) {
         showDealerTab(state.activeDealerTab || "overview");
       } else {
-        renderCatalog();
-        updateCartBadges();
-        renderOrders();
-        renderProfile();
         syncAgeGate();
         showCustomerTab(state.activeTab || "catalog");
       }
@@ -1200,6 +1220,19 @@
 
   // ==================== HODISALAR (EVENT LISTENERS) ====================
   function bindEvents() {
+    // Mode toggle (SuperAdmin <-> Do'kon)
+    const toggleBtn = document.getElementById("btnToggleAdminMode");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        if (!state.user || !state.user.is_superadmin) return;
+        if (state.activeSuperTab === "catalog") {
+          showSuperTab("overview");
+        } else {
+          showSuperTab("catalog");
+        }
+      });
+    }
+
     // Mijoz pastki menyusi
     document.getElementById("customerNav").addEventListener("click", (e) => {
       const btn = e.target.closest(".nav-item");

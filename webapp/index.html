@@ -32,6 +32,7 @@
       </div>
 
       <div class="topbar-right">
+        <button type="button" id="btnToggleAdminMode" class="btn-mode-toggle hidden"></button>
         <div id="userBadge" class="user-pill" aria-label="Profil">
           <span class="status-dot"></span>
           <span id="userBadgeName">Yuklanmoqda...</span>
@@ -532,13 +533,21 @@
 
     <!-- ==================== SUPERADMIN MENYUSI ==================== -->
     <nav class="bottom-nav super-nav hidden" id="superadminNav">
-      <button type="button" class="nav-item active" data-super-tab="overview">
+      <button type="button" class="nav-item active" data-super-tab="catalog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="21" r="1"></circle>
+          <circle cx="20" cy="21" r="1"></circle>
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+        </svg>
+        <span>🛍 Tovarlar</span>
+      </button>
+      <button type="button" class="nav-item" data-super-tab="overview">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="20" x2="18" y2="10"></line>
           <line x1="12" y1="20" x2="12" y2="4"></line>
           <line x1="6" y1="20" x2="6" y2="14"></line>
         </svg>
-        <span>Tahlil</span>
+        <span>📊 Tahlil</span>
       </button>
       <button type="button" class="nav-item" data-super-tab="factory">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
